@@ -70,6 +70,8 @@ const RECORD_TYPE = {
   MEMBER_TO_PUBLIC: "member_to_public",
   // 成员之间转移积分。
   MEMBER_TO_MEMBER: "member_to_member",
+  // 同一来源批量转移给多个目标。
+  BATCH_TRANSFER: "batch_transfer",
   // 撤销上一条可撤销积分记录。
   UNDO: "undo",
   // 创建房间记录。
@@ -89,6 +91,7 @@ const UNDOABLE_TYPES = [
   RECORD_TYPE.PUBLIC_TO_MEMBER,
   RECORD_TYPE.MEMBER_TO_PUBLIC,
   RECORD_TYPE.MEMBER_TO_MEMBER,
+  RECORD_TYPE.BATCH_TRANSFER,
 ];
 
 // 统一成功响应结构，前端依赖 success 字段判断调用结果。
@@ -702,6 +705,36 @@ function getTransferType(fromType, toType) {
   throw new Error("暂不支持该转移方式");
 }
 
+function getBatchTransferType(fromType, targets) {
+  if (targets.length === 1) return getTransferType(fromType, targets[0].toType);
+  return RECORD_TYPE.BATCH_TRANSFER;
+}
+
+function normalizeTransferTargets(value) {
+  if (!Array.isArray(value) || !value.length) throw new Error("请选择转入目标");
+
+  const seen = {};
+  return value.map((item) => {
+    const toType = normalizeText(item.toType);
+    const toMemberId = normalizeText(item.toMemberId);
+    if (toType !== "public" && toType !== "member") throw new Error("转入目标不正确");
+    if (toType === "member" && !toMemberId) throw new Error("转入成员不能为空");
+    const key = `${toType}:${toMemberId || "public"}`;
+    if (seen[key]) throw new Error("转入目标重复");
+    seen[key] = true;
+    return { toType, toMemberId };
+  });
+}
+
+function assertTransferTarget(fromType, fromMemberId, target) {
+  const { toType, toMemberId } = target;
+  if (fromType === "public" && toType === "public") throw new Error("来源和目标不能相同");
+  if (fromType === "member" && toType === "member" && fromMemberId === toMemberId) {
+    throw new Error("转出和转入成员不能相同");
+  }
+  getTransferType(fromType, toType);
+}
+
 // 校验积分转移权限，普通成员只能转出自己或从公共积分转给自己。
 function assertTransferPermission({ isOwner, currentMember, fromType, fromMemberId, toType, toMemberId }) {
   if (isOwner) return;
@@ -720,6 +753,29 @@ function assertTransferPermission({ isOwner, currentMember, fromType, fromMember
     if (toMemberId !== currentMemberId) {
       throw new Error("成员只能从公共积分池转给自己");
     }
+    return;
+  }
+
+  throw new Error("成员只能转移自己的积分或从公共积分池转给自己");
+}
+
+function assertBatchTransferPermission({ isOwner, currentMember, fromType, fromMemberId, targets }) {
+  if (isOwner) return;
+
+  if (!currentMember) throw new Error("请先加入房间");
+
+  const currentMemberId = currentMember._id;
+  if (fromType === "member") {
+    if (fromMemberId !== currentMemberId) throw new Error("成员只能转出自己的积分");
+    return;
+  }
+
+  if (
+    fromType === "public" &&
+    targets.length === 1 &&
+    targets[0].toType === "member" &&
+    targets[0].toMemberId === currentMemberId
+  ) {
     return;
   }
 
@@ -881,6 +937,169 @@ async function transferScore(event) {
           beforeSnapshot,
           afterSnapshot,
           remark: "积分转移",
+          isUndone: false,
+          undoRecordId: null,
+          createdAt: changedAt,
+        },
+      });
+    });
+
+    return success();
+  } catch (error) {
+    return fail(error.message || "转移失败");
+  }
+}
+
+// 执行同一来源到一个或多个目标的积分转移。
+async function batchTransferScore(event) {
+  await ensureCollections();
+
+  const wxContext = getWxContext();
+  const roomId = normalizeText(event.roomId);
+  const fromType = normalizeText(event.fromType);
+  const fromMemberId = normalizeText(event.fromMemberId);
+
+  try {
+    const amount = parsePositiveAmount(event.amount);
+    const transferTargets = normalizeTransferTargets(event.targets);
+    transferTargets.forEach((target) => assertTransferTarget(fromType, fromMemberId, target));
+    const recordType = getBatchTransferType(fromType, transferTargets);
+    const { room, currentMember, isOwner } = await getActiveRoomForParticipant(
+      roomId,
+      wxContext.OPENID
+    );
+    assertBatchTransferPermission({
+      isOwner,
+      currentMember,
+      fromType,
+      fromMemberId,
+      targets: transferTargets,
+    });
+    const operatorNickname = await getOperatorNickname(
+      roomId,
+      wxContext.OPENID,
+      room.ownerNickname
+    );
+
+    await db.runTransaction(async (transaction) => {
+      const changedAt = now();
+      const targets = [];
+      const beforeSnapshot = {};
+      const afterSnapshot = {};
+      const memberIds = [
+        fromType === "member" ? fromMemberId : "",
+        ...transferTargets
+          .filter((target) => target.toType === "member")
+          .map((target) => target.toMemberId),
+      ].filter(Boolean);
+      const uniqueMemberIds = [...new Set(memberIds)];
+      const memberMap = {};
+
+      if (uniqueMemberIds.length) {
+        const membersResult = await transaction
+          .collection("room_members")
+          .where({
+            _id: _.in(uniqueMemberIds),
+            roomId,
+            status: MEMBER_STATUS.ACTIVE,
+          })
+          .get();
+        membersResult.data.forEach((member) => {
+          memberMap[member._id] = member;
+        });
+      }
+
+      if (fromType === "member" && !memberMap[fromMemberId]) {
+        throw new Error("转出成员不存在");
+      }
+      transferTargets.forEach((target) => {
+        if (target.toType === "member" && !memberMap[target.toMemberId]) {
+          throw new Error("转入成员不存在");
+        }
+      });
+
+      const memberDeltas = {};
+      let publicDelta = 0;
+
+      if (fromType === "public") {
+        publicDelta -= amount * transferTargets.length;
+      } else if (fromType === "member") {
+        memberDeltas[fromMemberId] =
+          (memberDeltas[fromMemberId] || 0) - amount * transferTargets.length;
+      } else {
+        throw new Error("转出来源不正确");
+      }
+
+      transferTargets.forEach((target) => {
+        if (target.toType === "public") {
+          publicDelta += amount;
+          return;
+        }
+        memberDeltas[target.toMemberId] = (memberDeltas[target.toMemberId] || 0) + amount;
+      });
+
+      const beforeMembers = [];
+      const afterMembers = [];
+      const beforePublicScore = Number(room.publicScore || 0);
+      const nextPublicScore = beforePublicScore + publicDelta;
+      if (nextPublicScore < 0) throw new Error("公共积分不足");
+
+      if (publicDelta !== 0) {
+        beforeSnapshot.room = { publicScore: beforePublicScore };
+        afterSnapshot.room = { publicScore: nextPublicScore };
+        targets.push({
+          type: "public",
+          beforeScore: beforePublicScore,
+          afterScore: nextPublicScore,
+        });
+        await transaction.collection("rooms").doc(roomId).update({
+          data: {
+            publicScore: nextPublicScore,
+            updatedAt: changedAt,
+          },
+        });
+      } else {
+        await transaction.collection("rooms").doc(roomId).update({
+          data: { updatedAt: changedAt },
+        });
+      }
+
+      for (const memberId of Object.keys(memberDeltas)) {
+        const member = memberMap[memberId];
+        if (!member) throw new Error("成员不存在");
+        const beforeScore = Number(member.score || 0);
+        const afterScore = beforeScore + memberDeltas[memberId];
+        beforeMembers.push({ memberId: member._id, score: beforeScore });
+        afterMembers.push({ memberId: member._id, score: afterScore });
+        targets.push({
+          type: "member",
+          memberId: member._id,
+          nickname: member.nickname,
+          beforeScore,
+          afterScore,
+        });
+        await transaction.collection("room_members").doc(member._id).update({
+          data: {
+            score: afterScore,
+            updatedAt: changedAt,
+          },
+        });
+      }
+
+      if (beforeMembers.length) beforeSnapshot.members = beforeMembers;
+      if (afterMembers.length) afterSnapshot.members = afterMembers;
+
+      await transaction.collection("score_records").add({
+        data: {
+          roomId,
+          operatorOpenid: wxContext.OPENID,
+          operatorNickname,
+          type: recordType,
+          targets,
+          amount,
+          beforeSnapshot,
+          afterSnapshot,
+          remark: transferTargets.length > 1 ? "批量转移" : "积分转移",
           isUndone: false,
           undoRecordId: null,
           createdAt: changedAt,
@@ -1112,6 +1331,8 @@ exports.main = async (event) => {
       return batchUpdateScore(event);
     case "transferScore":
       return transferScore(event);
+    case "batchTransferScore":
+      return batchTransferScore(event);
     case "undoLastAction":
       return undoLastAction(event);
     case "closeRoom":

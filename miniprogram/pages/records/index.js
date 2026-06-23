@@ -16,6 +16,8 @@ const TYPE_LABELS = {
   member_to_public: "转回公共积分",
   // 成员之间转移积分。
   member_to_member: "成员间转移",
+  // 同一来源批量转移给多个目标。
+  batch_transfer: "批量转移",
   // 撤销一次积分变更。
   undo: "撤销操作",
   // 创建房间。
@@ -28,7 +30,12 @@ const TYPE_LABELS = {
 
 const POSITIVE_RECORD_TYPES = ["member_add", "batch_add"];
 const NEGATIVE_RECORD_TYPES = ["member_subtract", "batch_subtract"];
-const TRANSFER_RECORD_TYPES = ["public_to_member", "member_to_public", "member_to_member"];
+const TRANSFER_RECORD_TYPES = [
+  "public_to_member",
+  "member_to_public",
+  "member_to_member",
+  "batch_transfer",
+];
 const UNDOABLE_RECORD_TYPES = [
   "member_add",
   "member_subtract",
@@ -37,6 +44,7 @@ const UNDOABLE_RECORD_TYPES = [
   "public_to_member",
   "member_to_public",
   "member_to_member",
+  "batch_transfer",
 ];
 
 // 将记录时间格式化为记录页完整时间。

@@ -12,29 +12,48 @@
   </view>
 
   <view class="score-panel">
-    <view>
-      <view class="panel-label">公共积分池</view>
-      <view class="public-score">{{room.publicScore}}</view>
+    <view class="score-panel-main">
+      <view>
+        <view class="panel-label">公共积分池</view>
+        <view class="public-score">{{room.publicScore}}</view>
+      </view>
     </view>
-    <button class="share-button" open-type="share">分享房间</button>
+    <view class="score-panel-actions">
+      <view class="public-transfer-row" wx:if="{{canTransfer && room.status === 'active'}}">
+        <button class="public-transfer-button left" bindtap="openTransferToPublicDialog">转入</button>
+        <button class="public-transfer-button right" bindtap="openTransferFromPublicDialog">转出</button>
+      </view>
+      <button class="public-share-button" open-type="share">分享房间</button>
+    </view>
   </view>
-
   <view class="section">
     <view class="section-head">
       <view class="section-title">成员排行</view>
-      <button
-        wx:if="{{isOwner && room.status === 'active'}}"
-        class="text-button batch-toggle {{batchMode ? 'active' : ''}}"
-        bindtap="toggleBatchMode"
-      >
-        {{batchMode ? '取消批量' : '批量'}}
-      </button>
+      <view class="section-tools">
+        <button
+          wx:if="{{canTransfer && room.status === 'active'}}"
+          class="text-button transfer-toggle {{transferMode ? 'active' : ''}}"
+          bindtap="toggleTransferMode"
+        >
+          {{transferMode ? '取消转移' : '批量转移'}}
+        </button>
+        <button
+          wx:if="{{isOwner && room.status === 'active'}}"
+          class="text-button batch-toggle {{batchMode ? 'active' : ''}}"
+          bindtap="toggleBatchMode"
+        >
+          {{batchMode ? '取消批量' : '批量'}}
+        </button>
+      </view>
     </view>
 
-    <checkbox-group bindchange="onBatchChange">
+    <checkbox-group bindchange="onMemberSelectChange">
       <view class="member-card" wx:for="{{members}}" wx:key="_id">
         <view class="member-info">
-          <label class="member-check" wx:if="{{batchMode}}">
+          <label
+            class="member-check"
+            wx:if="{{batchMode || (transferMode && item._id !== currentMemberId)}}"
+          >
             <checkbox value="{{item._id}}" color="#1f7a5a" />
           </label>
           <view class="rank">{{index + 1}}</view>
@@ -44,8 +63,9 @@
           </view>
           <view class="member-score {{item.scoreTone}}">{{item.score}}</view>
         </view>
-        <view class="member-actions" wx:if="{{isOwner && room.status === 'active' && !batchMode}}">
+        <view class="member-actions" wx:if="{{room.status === 'active' && !batchMode && !transferMode}}">
           <button
+            wx:if="{{isOwner}}"
             class="score-action add"
             data-member-id="{{item._id}}"
             data-nickname="{{item.nickname}}"
@@ -55,6 +75,7 @@
             加
           </button>
           <button
+            wx:if="{{isOwner}}"
             class="score-action subtract"
             data-member-id="{{item._id}}"
             data-nickname="{{item.nickname}}"
@@ -62,6 +83,15 @@
             bindtap="updateMemberScore"
           >
             扣
+          </button>
+          <button
+            wx:if="{{canTransfer && item._id !== currentMemberId}}"
+            class="score-action transfer {{!isOwner ? 'compact-transfer' : ''}}"
+            data-member-id="{{item._id}}"
+            data-nickname="{{item.nickname}}"
+            bindtap="openMemberTransferDialog"
+          >
+            转
           </button>
         </view>
       </view>
@@ -71,42 +101,31 @@
       <button class="batch-button add" data-action="add" bindtap="runBatch">批量加分</button>
       <button class="batch-button subtract" data-action="subtract" bindtap="runBatch">批量扣分</button>
     </view>
+    <view class="batch-actions" wx:if="{{transferMode}}">
+      <button class="batch-button transfer" bindtap="openBatchTransferDialog">转给所选成员</button>
+    </view>
   </view>
 
-  <view class="section" wx:if="{{canTransfer && room.status === 'active'}}">
-    <view class="section-title">积分转移</view>
-    <view class="transfer-card">
-      <view class="transfer-row">
-        <picker
-          class="picker"
-          range="{{transferFromOptions}}"
-          range-key="label"
-          value="{{transferFromIndex}}"
-          data-field="transferFromIndex"
-          bindchange="onTransferPicker"
-        >
-          <view class="picker-value">从 {{transferFromOptions[transferFromIndex].label}}</view>
-        </picker>
-        <picker
-          class="picker"
-          range="{{transferToOptions}}"
-          range-key="label"
-          value="{{transferToIndex}}"
-          data-field="transferToIndex"
-          bindchange="onTransferPicker"
-        >
-          <view class="picker-value">到 {{transferToOptions[transferToIndex].label}}</view>
-        </picker>
+  <view class="transfer-mask" wx:if="{{transferDialogVisible}}" catchtap="closeTransferDialog">
+    <view class="transfer-dialog" catchtap="noop">
+      <view class="dialog-head">
+        <view>
+          <view class="dialog-title">积分转移</view>
+          <view class="dialog-subtitle">
+            从{{transferSourceLabel}}转给 {{transferTargetSummary}}
+          </view>
+        </view>
       </view>
-      <view class="transfer-row">
-        <input
-          class="transfer-input"
-          type="number"
-          placeholder="分值"
-          value="{{transferAmount}}"
-          bindinput="onTransferAmountInput"
-        />
-        <button class="transfer-button" bindtap="submitTransfer">转移</button>
+      <input
+        class="dialog-input"
+        type="number"
+        placeholder="每个目标的分值"
+        value="{{transferAmount}}"
+        bindinput="onTransferAmountInput"
+      />
+      <view class="dialog-actions">
+        <button class="dialog-button secondary" bindtap="closeTransferDialog">取消</button>
+        <button class="dialog-button primary" bindtap="submitTransfer">确认转移</button>
       </view>
     </view>
   </view>

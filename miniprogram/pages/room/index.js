@@ -16,6 +16,8 @@ const TYPE_LABELS = {
   member_to_public: "转回公共积分",
   // 成员之间转移积分。
   member_to_member: "成员间转移",
+  // 同一来源批量转移给多个目标。
+  batch_transfer: "批量转移",
   // 撤销一次积分变更。
   undo: "撤销操作",
   // 创建房间。
@@ -28,7 +30,12 @@ const TYPE_LABELS = {
 
 const POSITIVE_RECORD_TYPES = ["member_add", "batch_add"];
 const NEGATIVE_RECORD_TYPES = ["member_subtract", "batch_subtract"];
-const TRANSFER_RECORD_TYPES = ["public_to_member", "member_to_public", "member_to_member"];
+const TRANSFER_RECORD_TYPES = [
+  "public_to_member",
+  "member_to_public",
+  "member_to_member",
+  "batch_transfer",
+];
 const UNDOABLE_RECORD_TYPES = [
   "member_add",
   "member_subtract",
@@ -37,6 +44,7 @@ const UNDOABLE_RECORD_TYPES = [
   "public_to_member",
   "member_to_public",
   "member_to_member",
+  "batch_transfer",
 ];
 const RECENT_RECORD_PAGE_SIZE = 5;
 
@@ -211,6 +219,11 @@ function buildRecentRecordPageState(records, page) {
   };
 }
 
+function buildTransferTargetSummary(targets) {
+  if (!targets.length) return "未选择目标";
+  return targets.map((target) => target.label).join("、");
+}
+
 Page({
   data: {
     // 当前房间 ID，来自页面参数。
@@ -249,16 +262,26 @@ Page({
     batchMode: false,
     // 批量记分已选成员 ID 列表。
     batchSelected: [],
-    // 积分转出对象选项。
-    transferFromOptions: [],
-    // 积分转入对象选项。
-    transferToOptions: [],
-    // 当前选中的转出对象索引。
-    transferFromIndex: 0,
-    // 当前选中的转入对象索引。
-    transferToIndex: 1,
+    // 是否处于批量转移选择模式。
+    transferMode: false,
+    // 批量转移已选目标成员 ID 列表。
+    transferSelected: [],
     // 用户输入的转移分值。
     transferAmount: "",
+    // 转移弹窗是否展示。
+    transferDialogVisible: false,
+    // 当前弹窗内的转入目标列表。
+    transferTargets: [],
+    // 当前转移来源类型。
+    transferSourceType: "member",
+    // 当前转移来源成员 ID。
+    transferSourceMemberId: "",
+    // 当前转移来源展示文案。
+    transferSourceLabel: "我",
+    // 当前选中目标展示文本。
+    transferTargetSummary: "未选择目标",
+    // 当前选中目标数量。
+    transferTargetCount: 0,
   },
 
   // 初始化房间 ID 并加载房间数据。
@@ -290,7 +313,6 @@ Page({
         const isOwner = result.currentUserRole === "owner";
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
-        const transferState = this.buildTransferOptions(members, isOwner, currentMemberId, 0);
         const formattedRecords = (result.recentRecords || []).map((record) =>
           formatRecord(record, currentMemberId)
         );
@@ -299,12 +321,17 @@ Page({
           members,
           ...buildRecentRecordPageState(formattedRecords, 1),
           isOwner,
-          canTransfer: isOwner || !!currentMemberId,
+          canTransfer: !!currentMemberId,
           currentMemberId,
-          transferFromOptions: transferState.fromOptions,
-          transferToOptions: transferState.toOptions,
-          transferFromIndex: transferState.fromIndex,
-          transferToIndex: transferState.toIndex,
+          transferDialogVisible: false,
+          transferMode: false,
+          transferSelected: [],
+          transferTargets: [],
+          transferSourceType: "member",
+          transferSourceMemberId: currentMemberId,
+          transferSourceLabel: "我",
+          transferTargetSummary: "未选择目标",
+          transferTargetCount: 0,
           loading: false,
         });
         saveRecentRoom({
@@ -326,55 +353,6 @@ Page({
     this.setData(
       buildRecentRecordPageState(this.data.allRecentRecords, this.data.recentRecordPage + offset)
     );
-  },
-
-  // 构建积分转移的转出和转入选项，普通成员只开放受限选项。
-  buildTransferOptions(members, isOwner, currentMemberId, preferredFromIndex) {
-    const memberOptions = members.map((member) => ({
-      label: member.nickname,
-      type: "member",
-      memberId: member._id,
-    }));
-    const publicOption = { label: "公共积分池", type: "public", memberId: "" };
-
-    if (isOwner) {
-      const fromOptions = [publicOption, ...memberOptions];
-      const fromIndex = Math.min(preferredFromIndex || 0, fromOptions.length - 1);
-      return {
-        fromOptions,
-        toOptions: fromOptions,
-        fromIndex,
-        toIndex: fromIndex === 0 && fromOptions.length > 1 ? 1 : 0,
-      };
-    }
-
-    const selfOption = memberOptions.find((option) => option.memberId === currentMemberId);
-    if (!selfOption) {
-      return {
-        fromOptions: [],
-        toOptions: [],
-        fromIndex: 0,
-        toIndex: 0,
-      };
-    }
-
-    const fromOptions = [selfOption, publicOption];
-    const fromIndex = Math.min(preferredFromIndex || 0, fromOptions.length - 1);
-    const selectedFrom = fromOptions[fromIndex];
-    const toOptions =
-      selectedFrom.type === "public"
-        ? [selfOption]
-        : [
-            publicOption,
-            ...memberOptions.filter((option) => option.memberId !== currentMemberId),
-          ];
-
-    return {
-      fromOptions,
-      toOptions,
-      fromIndex,
-      toIndex: 0,
-    };
   },
 
   // 复制房间码，方便用户分享给其他成员。
@@ -440,16 +418,37 @@ Page({
 
   // 切换批量记分模式，并清空已选成员。
   toggleBatchMode() {
+    const nextBatchMode = !this.data.batchMode;
     this.setData({
-      batchMode: !this.data.batchMode,
+      batchMode: nextBatchMode,
+      batchSelected: [],
+      transferMode: false,
+      transferSelected: [],
+    });
+  },
+
+  // 切换批量转移模式，并清空已选成员。
+  toggleTransferMode() {
+    const nextTransferMode = !this.data.transferMode;
+    this.setData({
+      transferMode: nextTransferMode,
+      transferSelected: [],
+      batchMode: false,
       batchSelected: [],
     });
   },
 
-  // 更新批量记分已选成员列表。
-  onBatchChange(event) {
+  // 更新成员选择列表，按当前模式分别用于批量记分或批量转移。
+  onMemberSelectChange(event) {
+    const values = event.detail.value;
+    if (this.data.transferMode) {
+      this.setData({
+        transferSelected: values.filter((memberId) => memberId !== this.data.currentMemberId),
+      });
+      return;
+    }
     this.setData({
-      batchSelected: event.detail.value,
+      batchSelected: values,
     });
   },
 
@@ -487,30 +486,6 @@ Page({
       });
   },
 
-  // 处理积分转移选择器变化，并按权限联动目标选项。
-  onTransferPicker(event) {
-    const { field } = event.currentTarget.dataset;
-    const nextValue = Number(event.detail.value);
-    if (field === "transferFromIndex") {
-      const transferState = this.buildTransferOptions(
-        this.data.members,
-        this.data.isOwner,
-        this.data.currentMemberId,
-        nextValue
-      );
-      this.setData({
-        transferFromOptions: transferState.fromOptions,
-        transferToOptions: transferState.toOptions,
-        transferFromIndex: transferState.fromIndex,
-        transferToIndex: transferState.toIndex,
-      });
-      return;
-    }
-    this.setData({
-      [field]: nextValue,
-    });
-  },
-
   // 更新积分转移分值输入。
   onTransferAmountInput(event) {
     this.setData({
@@ -518,18 +493,112 @@ Page({
     });
   },
 
-  // 提交积分转移请求，云函数负责最终权限和事务校验。
-  submitTransfer() {
-    if (this.data.submitting) return;
-    const from = this.data.transferFromOptions[this.data.transferFromIndex];
-    const to = this.data.transferToOptions[this.data.transferToIndex];
-    const amount = Number(this.data.transferAmount);
-    if (!from || !to) {
-      wx.showToast({ title: "请选择转移对象", icon: "none" });
+  // 阻止弹窗内部点击冒泡到遮罩。
+  noop() {},
+
+  // 打开转移确认弹窗。
+  openTransferDialogWithTargets(targets, source = {}) {
+    if (!this.data.currentMemberId) {
+      wx.showToast({ title: "请先加入房间", icon: "none" });
       return;
     }
-    if (from.type === to.type && from.memberId === to.memberId) {
-      wx.showToast({ title: "来源和目标不能相同", icon: "none" });
+    if (!targets.length) {
+      wx.showToast({ title: "请选择转入目标", icon: "none" });
+      return;
+    }
+    this.setData({
+      transferDialogVisible: true,
+      transferTargets: targets,
+      transferSourceType: source.type || "member",
+      transferSourceMemberId: source.memberId || this.data.currentMemberId,
+      transferSourceLabel: source.label || "我",
+      transferTargetSummary: buildTransferTargetSummary(targets),
+      transferTargetCount: targets.length,
+    });
+  },
+
+  // 从自己转给单个成员。
+  openMemberTransferDialog(event) {
+    const { memberId, nickname } = event.currentTarget.dataset;
+    if (!memberId || memberId === this.data.currentMemberId) {
+      wx.showToast({ title: "不能转给自己", icon: "none" });
+      return;
+    }
+    this.openTransferDialogWithTargets([
+      {
+        type: "member",
+        memberId,
+        label: nickname || "成员",
+      },
+    ]);
+  },
+
+  // 从自己转入公共积分池。
+  openTransferToPublicDialog() {
+    this.openTransferDialogWithTargets([
+      {
+        type: "public",
+        memberId: "",
+        label: "公共积分池",
+      },
+    ]);
+  },
+
+  // 从公共积分池转给自己。
+  openTransferFromPublicDialog() {
+    this.openTransferDialogWithTargets(
+      [
+        {
+          type: "member",
+          memberId: this.data.currentMemberId,
+          label: "我",
+        },
+      ],
+      {
+        type: "public",
+        memberId: "",
+        label: "公共积分池",
+      }
+    );
+  },
+
+  // 从自己批量转给已选成员。
+  openBatchTransferDialog() {
+    const selectedSet = {};
+    this.data.transferSelected.forEach((memberId) => {
+      selectedSet[memberId] = true;
+    });
+    const targets = this.data.members
+      .filter((member) => selectedSet[member._id] && member._id !== this.data.currentMemberId)
+      .map((member) => ({
+        type: "member",
+        memberId: member._id,
+        label: member.nickname,
+      }));
+    this.openTransferDialogWithTargets(targets);
+  },
+
+  // 关闭转移弹窗，清空输入。
+  closeTransferDialog() {
+    this.setData({
+      transferDialogVisible: false,
+      transferAmount: "",
+      transferTargets: [],
+      transferSourceType: "member",
+      transferSourceMemberId: this.data.currentMemberId,
+      transferSourceLabel: "我",
+      transferTargetSummary: "未选择目标",
+      transferTargetCount: 0,
+    });
+  },
+
+  // 提交单目标或多目标积分转移请求，云函数负责最终权限和事务校验。
+  submitTransfer() {
+    if (this.data.submitting) return;
+    const targets = this.data.transferTargets;
+    const amount = Number(this.data.transferAmount);
+    if (!this.data.currentMemberId || !targets.length) {
+      wx.showToast({ title: "请选择转入目标", icon: "none" });
       return;
     }
     if (!Number.isInteger(amount) || amount <= 0 || amount > 9999) {
@@ -539,17 +608,30 @@ Page({
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "提交中" });
-    callScoreFunction("transferScore", {
+    callScoreFunction("batchTransferScore", {
       roomId: this.data.roomId,
-      fromType: from.type,
-      fromMemberId: from.memberId,
-      toType: to.type,
-      toMemberId: to.memberId,
+      fromType: this.data.transferSourceType,
+      fromMemberId: this.data.transferSourceMemberId,
+      targets: targets.map((target) => ({
+        toType: target.type,
+        toMemberId: target.memberId,
+      })),
       amount,
     })
       .then(() => {
         wx.showToast({ title: "已转移", icon: "success" });
-        this.setData({ transferAmount: "" });
+        this.setData({
+          transferDialogVisible: false,
+          transferAmount: "",
+          transferTargets: [],
+          transferSourceType: "member",
+          transferSourceMemberId: this.data.currentMemberId,
+          transferSourceLabel: "我",
+          transferTargetSummary: "未选择目标",
+          transferTargetCount: 0,
+          transferMode: false,
+          transferSelected: [],
+        });
         return this.loadRoom();
       })
       .catch(showError)

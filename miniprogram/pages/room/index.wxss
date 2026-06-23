@@ -49,7 +49,9 @@ page {
 }
 
 .batch-toggle {
-  min-width: 132rpx;
+  width: 104rpx;
+  min-width: 0;
+  padding: 0;
   background: #d9f6e7;
   color: #126b45;
   border: 2rpx solid #95d8b5;
@@ -60,6 +62,22 @@ page {
   background: #1f7a5a;
   color: #ffffff;
   border-color: #1f7a5a;
+}
+
+.transfer-toggle {
+  width: 136rpx;
+  min-width: 0;
+  padding: 0;
+  background: #e9f0ff;
+  color: #1d4f91;
+  border: 2rpx solid #b8ccf2;
+  font-weight: 700;
+}
+
+.transfer-toggle.active {
+  background: #1d4f91;
+  color: #ffffff;
+  border-color: #1d4f91;
 }
 
 .records-all-button {
@@ -81,13 +99,30 @@ page {
 
 .score-panel {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20rpx;
   margin-top: 20rpx;
   padding: 28rpx;
   border-radius: 16rpx;
   background: #1f7a5a;
   color: #ffffff;
+}
+
+.score-panel-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.score-panel-actions {
+  width: 100%;
+}
+
+.public-transfer-row {
+  display: flex;
+  width: 100%;
+  margin-bottom: 12rpx;
 }
 
 .panel-label {
@@ -102,6 +137,42 @@ page {
   line-height: 1.1;
 }
 
+.public-transfer-button,
+.public-share-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+  height: 54rpx;
+  border-radius: 10rpx;
+  background: #e9f0ff;
+  color: #1d4f91;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.public-transfer-button.left {
+  flex: 1;
+  margin-right: 8rpx;
+}
+
+.public-transfer-button.right {
+  flex: 1;
+  margin-left: 8rpx;
+}
+
+.public-share-button {
+  width: 100%;
+  background: #ffffff;
+  color: #1f7a5a;
+  border: 0;
+}
+
 .share-button {
   background: #ffffff;
   color: #1f7a5a;
@@ -113,15 +184,26 @@ page {
 
 .section-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 14rpx;
   margin-bottom: 14rpx;
+}
+
+.section-tools {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 12rpx;
+  width: 100%;
 }
 
 .section-title {
   color: #111827;
   font-size: 30rpx;
   font-weight: 700;
+  line-height: 1.35;
 }
 
 .member-card {
@@ -236,6 +318,16 @@ page {
   border: 2rpx solid #f3b8b0;
 }
 
+.transfer {
+  background: #e9f0ff;
+  color: #1d4f91;
+  border: 2rpx solid #b8ccf2;
+}
+
+.compact-transfer {
+  flex: 0 0 31%;
+}
+
 .batch-actions,
 .footer-actions {
   display: flex;
@@ -259,58 +351,88 @@ page {
   box-sizing: border-box;
 }
 
-.transfer-card {
-  padding: 22rpx;
-  border-radius: 14rpx;
-  background: #ffffff;
-}
-
-.transfer-row {
-  display: flex;
-  gap: 16rpx;
-  margin-bottom: 16rpx;
-}
-
-.transfer-row:last-child {
-  margin-bottom: 0;
-}
-
-.picker {
-  flex: 1;
-  min-width: 0;
-}
-
-.picker-value,
-.transfer-input {
-  height: 76rpx;
-  padding: 0 18rpx;
-  border-radius: 10rpx;
-  background: #f7f8fa;
-  color: #111827;
-  font-size: 25rpx;
-  line-height: 76rpx;
-  box-sizing: border-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.transfer-input {
-  flex: 1;
-}
-
-.transfer-button {
+.transfer-mask {
+  position: fixed;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 150rpx;
+  padding: 32rpx;
+  background: rgba(17, 24, 39, 0.45);
+  box-sizing: border-box;
+}
+
+.transfer-dialog {
+  width: 100%;
+  max-height: 88vh;
+  padding: 28rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.dialog-head {
+  margin-bottom: 22rpx;
+}
+
+.dialog-title {
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.dialog-subtitle {
+  margin-top: 8rpx;
+  color: #6b7280;
+  font-size: 23rpx;
+  line-height: 1.45;
+}
+
+.dialog-input {
+  width: 100%;
   height: 76rpx;
-  border-radius: 10rpx;
+  padding: 0 20rpx;
+  border-radius: 12rpx;
+  background: #f7f8fa;
+  color: #111827;
+  font-size: 26rpx;
+  line-height: 76rpx;
+  box-sizing: border-box;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
+.dialog-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  margin: 0;
+  height: 70rpx;
+  border-radius: 12rpx;
+  font-size: 25rpx;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.dialog-button.primary {
   background: #1f7a5a;
   color: #ffffff;
-  font-size: 26rpx;
-  line-height: 1;
+}
+
+.dialog-button.secondary {
+  background: #eef0f3;
+  color: #374151;
 }
 
 .record-empty {
