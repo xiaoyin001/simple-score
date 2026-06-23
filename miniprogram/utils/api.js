@@ -1,4 +1,48 @@
+const runtimeConfig = require("../config/runtime");
+
+function normalizeResult(result) {
+  if (!result || !result.success) {
+    throw new Error((result && result.message) || "操作失败");
+  }
+  return result;
+}
+
+function callLocalScoreFunction(type, data = {}) {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url: runtimeConfig.localServerUrl,
+      method: "POST",
+      header: {
+        "content-type": "application/json",
+        "x-simple-score-openid": runtimeConfig.localMockOpenid,
+      },
+      data: {
+        type,
+        ...data,
+      },
+      success(response) {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          reject(new Error(`本地服务请求失败：${response.statusCode}`));
+          return;
+        }
+        try {
+          resolve(normalizeResult(response.data));
+        } catch (error) {
+          reject(error);
+        }
+      },
+      fail(error) {
+        reject(new Error(error.errMsg || "本地服务连接失败"));
+      },
+    });
+  });
+}
+
 function callScoreFunction(type, data = {}) {
+  if (runtimeConfig.backendMode === "local") {
+    return callLocalScoreFunction(type, data);
+  }
+
   return wx.cloud
     .callFunction({
       name: "scoreFunctions",
@@ -8,11 +52,7 @@ function callScoreFunction(type, data = {}) {
       },
     })
     .then((response) => {
-      const result = response.result || {};
-      if (!result.success) {
-        throw new Error(result.message || "操作失败");
-      }
-      return result;
+      return normalizeResult(response.result || {});
     });
 }
 

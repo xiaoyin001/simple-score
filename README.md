@@ -18,6 +18,8 @@
 
 ```text
 miniprogram/
+  config/
+    runtime.js
   pages/
     index/
     create-room/
@@ -40,9 +42,11 @@ docs/
 
 1. 使用微信开发者工具打开项目根目录。
 2. 在云开发控制台创建或选择云环境。
-3. 如需指定云环境，填写 `miniprogram/app.js` 中的 `globalData.env`。
+3. 如需指定云环境，填写 `miniprogram/config/runtime.js` 中的 `cloudEnvId`。
 4. 右键 `cloudfunctions/scoreFunctions`，选择“上传并部署：云端安装依赖”。
 5. 编译小程序后，从首页创建房间并测试加入、记分、转移、撤销和分享流程。
+
+开发阶段如需使用本地模拟服务，可将 `miniprogram/config/runtime.js` 中的 `backendMode` 改为 `local`，并确认 `localServerUrl` 指向本地服务地址。本地服务需要提供与 `scoreFunctions` 一致的请求和返回结构。
 
 云函数会自动尝试创建以下集合：
 
