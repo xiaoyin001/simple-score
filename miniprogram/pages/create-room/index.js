@@ -2,13 +2,19 @@ const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/ap
 
 Page({
   data: {
+    // 房间名称，提交前会去除首尾空白。
     name: "",
+    // 房间人数上限，云函数再次校验 2 到 12。
     memberLimit: 12,
+    // 公共积分初始值。
     publicScore: 0,
+    // 创建者在房间内展示的昵称。
     nickname: "",
+    // 提交中状态，防止重复创建。
     submitting: false,
   },
 
+  // 根据输入框绑定的 field 更新对应表单字段。
   onInput(event) {
     const { field } = event.currentTarget.dataset;
     this.setData({
@@ -16,6 +22,7 @@ Page({
     });
   },
 
+  // 提交创建房间请求，成功后进入房间详情页。
   submit() {
     if (this.data.submitting) return;
     const name = String(this.data.name || "").trim();

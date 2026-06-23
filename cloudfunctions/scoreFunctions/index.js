@@ -7,33 +7,80 @@ cloud.init({
 const db = cloud.database();
 const _ = db.command;
 
+/**
+ * 房间集合字段：
+ * roomCode 房间码；name 房间名称；ownerOpenid 房主标识；ownerNickname 房主昵称；
+ * memberLimit 成员上限；publicScore 公共积分；status 房间状态；
+ * createdAt/updatedAt/expireAt/closedAt 生命周期时间；version 数据版本。
+ */
+/**
+ * 成员集合字段：
+ * roomId 所属房间；openid 用户标识；nickname 显示昵称；avatarUrl 头像；
+ * score 当前积分；role 成员角色；joinedAt/updatedAt/leftAt 成员时间；status 成员状态。
+ */
+/**
+ * 记录集合字段：
+ * roomId 所属房间；operatorOpenid/operatorNickname 操作人；type 操作类型；
+ * targets 影响对象；amount 分值；beforeSnapshot/afterSnapshot 前后快照；
+ * remark 备注；isUndone 撤销标记；undoRecordId 撤销关联；createdAt 操作时间。
+ */
+
+// 业务集合名称，云函数启动后会按需确保集合存在。
 const COLLECTIONS = ["rooms", "room_members", "score_records"];
+
+// 房间状态枚举，控制房间是否允许继续记分。
 const ROOM_STATUS = {
+  // 可加入、可记分的正常状态。
   ACTIVE: "active",
+  // 房主主动关闭后的只读状态。
   CLOSED: "closed",
+  // 超过有效期后的只读状态。
   EXPIRED: "expired",
 };
+
+// 成员状态枚举，当前版本只对 active 成员开放房间能力。
 const MEMBER_STATUS = {
+  // 正常参与房间的成员。
   ACTIVE: "active",
+  // 预留的离开状态。
   LEFT: "left",
 };
+
+// 成员角色枚举，用于区分房主和普通成员权限。
 const MEMBER_ROLE = {
+  // 房间创建者，拥有完整记分管理权限。
   OWNER: "owner",
+  // 普通成员，只能查看和发起受限积分转移。
   MEMBER: "member",
 };
+
+// 操作记录类型枚举，所有积分变化和房间关键动作都会落库。
 const RECORD_TYPE = {
+  // 单个成员加分。
   MEMBER_ADD: "member_add",
+  // 单个成员扣分。
   MEMBER_SUBTRACT: "member_subtract",
+  // 多个成员批量加分。
   BATCH_ADD: "batch_add",
+  // 多个成员批量扣分。
   BATCH_SUBTRACT: "batch_subtract",
+  // 公共积分转给成员。
   PUBLIC_TO_MEMBER: "public_to_member",
+  // 成员积分转回公共积分。
   MEMBER_TO_PUBLIC: "member_to_public",
+  // 成员之间转移积分。
   MEMBER_TO_MEMBER: "member_to_member",
+  // 撤销上一条可撤销积分记录。
   UNDO: "undo",
+  // 创建房间记录。
   ROOM_CREATED: "room_created",
+  // 加入房间记录。
   MEMBER_JOINED: "member_joined",
+  // 关闭房间记录。
   ROOM_CLOSED: "room_closed",
 };
+
+// 可撤销的积分变更类型，创建、加入和关闭房间不参与撤销。
 const UNDOABLE_TYPES = [
   RECORD_TYPE.MEMBER_ADD,
   RECORD_TYPE.MEMBER_SUBTRACT,
@@ -44,6 +91,7 @@ const UNDOABLE_TYPES = [
   RECORD_TYPE.MEMBER_TO_MEMBER,
 ];
 
+// 统一成功响应结构，前端依赖 success 字段判断调用结果。
 function success(data = {}) {
   return {
     success: true,
@@ -51,6 +99,7 @@ function success(data = {}) {
   };
 }
 
+// 统一失败响应结构，保留错误码便于前端或调试工具判断原因。
 function fail(message, code = "BAD_REQUEST") {
   return {
     success: false,
@@ -59,14 +108,17 @@ function fail(message, code = "BAD_REQUEST") {
   };
 }
 
+// 返回当前时间，统一所有写入记录的时间来源。
 function now() {
   return new Date();
 }
 
+// 清洗文本输入，避免空值和多余空白进入业务校验。
 function normalizeText(value, fallback = "") {
   return String(value || fallback).trim();
 }
 
+// 将输入转换为整数，非法输入返回 NaN 交给业务校验处理。
 function parseInteger(value) {
   if (value === "" || value === null || value === undefined) return NaN;
   const numberValue = Number(value);
@@ -74,6 +126,7 @@ function parseInteger(value) {
   return numberValue;
 }
 
+// 校验单次分值，限制为 1 到 9999 的整数。
 function parsePositiveAmount(value) {
   const amount = parseInteger(value);
   if (!Number.isInteger(amount) || amount <= 0 || amount > 9999) {
@@ -82,28 +135,32 @@ function parsePositiveAmount(value) {
   return amount;
 }
 
+// 构造成员昵称，未填写时使用成员序号兜底。
 function buildNickname(input, fallbackIndex) {
   const nickname = normalizeText(input);
   if (nickname) return nickname.slice(0, 20);
   return `成员${fallbackIndex || ""}`;
 }
 
+// 确保核心集合存在，方便新云环境首次运行。
 async function ensureCollections() {
   await Promise.all(
     COLLECTIONS.map(async (name) => {
       try {
         await db.createCollection(name);
       } catch (error) {
-        // Collection already exists in normal use.
+        // 集合已存在时忽略，保持初始化过程幂等。
       }
     })
   );
 }
 
+// 获取微信调用上下文，集中读取 openid 等身份信息。
 function getWxContext() {
   return cloud.getWXContext();
 }
 
+// 返回当前调用用户的微信身份信息。
 async function getOpenId() {
   const wxContext = getWxContext();
   return success({
@@ -113,6 +170,7 @@ async function getOpenId() {
   });
 }
 
+// 按房间 ID 或房间码查找房间，支持分享和手动输入两种入口。
 async function findRoomByCodeOrId({ roomId, roomCode }) {
   if (roomId) {
     const roomResult = await db.collection("rooms").doc(roomId).get();
@@ -129,10 +187,12 @@ async function findRoomByCodeOrId({ roomId, roomCode }) {
   return roomResult.data[0] || null;
 }
 
+// 判断房间是否已经超过有效期。
 function isExpired(room) {
   return room.expireAt && new Date(room.expireAt).getTime() <= Date.now();
 }
 
+// 房间过期时即时标记为 expired，避免继续发生记分操作。
 async function markExpiredIfNeeded(room) {
   if (!room || room.status !== ROOM_STATUS.ACTIVE || !isExpired(room)) return room;
   await db.collection("rooms").doc(room._id).update({
@@ -147,6 +207,7 @@ async function markExpiredIfNeeded(room) {
   };
 }
 
+// 生成不易混淆的 6 位房间码，并检查唯一性。
 async function generateRoomCode() {
   const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -163,6 +224,7 @@ async function generateRoomCode() {
   throw new Error("房间码生成失败，请重试");
 }
 
+// 创建房间，同时创建房主成员记录和创建房间操作记录。
 async function createRoom(event) {
   await ensureCollections();
 
@@ -247,6 +309,7 @@ async function createRoom(event) {
   }
 }
 
+// 加入房间，重复加入时返回已有成员，不重复占用名额。
 async function joinRoom(event) {
   await ensureCollections();
 
@@ -336,6 +399,7 @@ async function joinRoom(event) {
   });
 }
 
+// 获取房间详情、成员列表、最近记录和当前用户角色。
 async function getRoom(event) {
   await ensureCollections();
 
@@ -390,6 +454,7 @@ async function getRoom(event) {
   });
 }
 
+// 获取可操作房间并校验房主权限。
 async function getActiveRoomForOwner(roomId, openid) {
   const roomResult = await db.collection("rooms").doc(roomId).get();
   const room = await markExpiredIfNeeded(roomResult.data);
@@ -402,6 +467,7 @@ async function getActiveRoomForOwner(roomId, openid) {
   return room;
 }
 
+// 获取可操作房间并校验调用者是否为房主或当前房间成员。
 async function getActiveRoomForParticipant(roomId, openid) {
   const roomResult = await db.collection("rooms").doc(roomId).get();
   const room = await markExpiredIfNeeded(roomResult.data);
@@ -427,6 +493,7 @@ async function getActiveRoomForParticipant(roomId, openid) {
   return { room, currentMember, isOwner };
 }
 
+// 查询操作人昵称，记录展示时优先使用房间内昵称。
 async function getOperatorNickname(roomId, openid, fallback) {
   const result = await db
     .collection("room_members")
@@ -440,6 +507,7 @@ async function getOperatorNickname(roomId, openid, fallback) {
   return (result.data[0] && result.data[0].nickname) || fallback || "房主";
 }
 
+// 房主为单个成员加分或扣分，事务内同步写入积分记录。
 async function updateScore(event) {
   await ensureCollections();
 
@@ -522,6 +590,7 @@ async function updateScore(event) {
   }
 }
 
+// 房主批量调整成员积分，事务内逐个更新并写入一条批量记录。
 async function batchUpdateScore(event) {
   await ensureCollections();
 
@@ -610,6 +679,7 @@ async function batchUpdateScore(event) {
   }
 }
 
+// 根据转出和转入对象类型确定积分转移记录类型。
 function getTransferType(fromType, toType) {
   if (fromType === "public" && toType === "member") return RECORD_TYPE.PUBLIC_TO_MEMBER;
   if (fromType === "member" && toType === "public") return RECORD_TYPE.MEMBER_TO_PUBLIC;
@@ -617,6 +687,7 @@ function getTransferType(fromType, toType) {
   throw new Error("暂不支持该转移方式");
 }
 
+// 校验积分转移权限，普通成员只能转出自己或从公共积分转给自己。
 function assertTransferPermission({ isOwner, currentMember, fromType, fromMemberId, toType, toMemberId }) {
   if (isOwner) return;
 
@@ -640,6 +711,7 @@ function assertTransferPermission({ isOwner, currentMember, fromType, fromMember
   throw new Error("成员只能转移自己的积分或从公共积分池转给自己");
 }
 
+// 执行公共积分与成员、成员与成员之间的积分转移。
 async function transferScore(event) {
   await ensureCollections();
 
@@ -807,6 +879,7 @@ async function transferScore(event) {
   }
 }
 
+// 撤销最近一次或指定的一次可撤销积分变更。
 async function undoLastAction(event) {
   await ensureCollections();
 
@@ -907,6 +980,7 @@ async function undoLastAction(event) {
   }
 }
 
+// 房主关闭房间，关闭后不再允许继续修改积分。
 async function closeRoom(event) {
   await ensureCollections();
 
@@ -952,6 +1026,7 @@ async function closeRoom(event) {
   }
 }
 
+// 云函数入口，根据 type 分发到具体业务 action。
 exports.main = async (event) => {
   switch (event.type) {
     case "getOpenId":

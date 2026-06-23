@@ -1,19 +1,32 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
 
+// 操作类型到页面展示文案的映射。
 const TYPE_LABELS = {
+  // 单个成员加分。
   member_add: "成员加分",
+  // 单个成员扣分。
   member_subtract: "成员扣分",
+  // 多个成员批量加分。
   batch_add: "批量加分",
+  // 多个成员批量扣分。
   batch_subtract: "批量扣分",
+  // 公共积分转给成员。
   public_to_member: "公共积分转出",
+  // 成员积分转回公共积分。
   member_to_public: "转回公共积分",
+  // 成员之间转移积分。
   member_to_member: "成员间转移",
+  // 撤销一次积分变更。
   undo: "撤销操作",
+  // 创建房间。
   room_created: "创建房间",
+  // 成员加入房间。
   member_joined: "加入房间",
+  // 关闭房间。
   room_closed: "关闭房间",
 };
 
+// 将记录时间格式化为房间页使用的短时间。
 function formatTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -21,6 +34,7 @@ function formatTime(value) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// 将原始操作记录转换为页面展示结构。
 function formatRecord(record) {
   const targets = (record.targets || [])
     .map((target) => target.nickname || target.name || (target.type === "public" ? "公共积分池" : "成员"))
@@ -36,24 +50,41 @@ function formatRecord(record) {
 
 Page({
   data: {
+    // 当前房间 ID，来自页面参数。
     roomId: "",
+    // 页面加载状态。
     loading: true,
+    // 操作提交状态，防止重复点击。
     submitting: false,
+    // 房间详情数据。
     room: null,
+    // 当前活跃成员列表。
     members: [],
+    // 最近操作记录展示列表。
     recentRecords: [],
+    // 当前用户是否为房主。
     isOwner: false,
+    // 当前用户是否可发起积分转移。
     canTransfer: false,
+    // 当前用户在房间内的成员 ID。
     currentMemberId: "",
+    // 是否处于批量记分选择模式。
     batchMode: false,
+    // 批量记分已选成员 ID 列表。
     batchSelected: [],
+    // 积分转出对象选项。
     transferFromOptions: [],
+    // 积分转入对象选项。
     transferToOptions: [],
+    // 当前选中的转出对象索引。
     transferFromIndex: 0,
+    // 当前选中的转入对象索引。
     transferToIndex: 1,
+    // 用户输入的转移分值。
     transferAmount: "",
   },
 
+  // 初始化房间 ID 并加载房间数据。
   onLoad(options) {
     this.setData({
       roomId: options.roomId || "",
@@ -61,10 +92,12 @@ Page({
     this.loadRoom();
   },
 
+  // 下拉刷新房间详情。
   onPullDownRefresh() {
     this.loadRoom().finally(() => wx.stopPullDownRefresh());
   },
 
+  // 从云函数加载房间、成员、记录和当前用户权限。
   loadRoom() {
     if (!this.data.roomId) {
       wx.showToast({ title: "缺少房间 ID", icon: "none" });
@@ -103,6 +136,7 @@ Page({
       });
   },
 
+  // 构建积分转移的转出和转入选项，普通成员只开放受限选项。
   buildTransferOptions(members, isOwner, currentMemberId, preferredFromIndex) {
     const memberOptions = members.map((member) => ({
       label: member.nickname,
@@ -151,12 +185,14 @@ Page({
     };
   },
 
+  // 复制房间码，方便用户分享给其他成员。
   copyRoomCode() {
     wx.setClipboardData({
       data: (this.data.room && this.data.room.roomCode) || "",
     });
   },
 
+  // 弹出分值输入框，并校验 1 到 9999 的整数。
   promptAmount(title) {
     return new Promise((resolve, reject) => {
       wx.showModal({
@@ -181,6 +217,7 @@ Page({
     });
   },
 
+  // 房主对单个成员执行加分或扣分。
   updateMemberScore(event) {
     if (this.data.submitting) return;
     const { memberId, action, nickname } = event.currentTarget.dataset;
@@ -209,6 +246,7 @@ Page({
       });
   },
 
+  // 切换批量记分模式，并清空已选成员。
   toggleBatchMode() {
     this.setData({
       batchMode: !this.data.batchMode,
@@ -216,12 +254,14 @@ Page({
     });
   },
 
+  // 更新批量记分已选成员列表。
   onBatchChange(event) {
     this.setData({
       batchSelected: event.detail.value,
     });
   },
 
+  // 提交批量加分或扣分请求。
   runBatch(event) {
     if (this.data.submitting) return;
     const { action } = event.currentTarget.dataset;
@@ -255,6 +295,7 @@ Page({
       });
   },
 
+  // 处理积分转移选择器变化，并按权限联动目标选项。
   onTransferPicker(event) {
     const { field } = event.currentTarget.dataset;
     const nextValue = Number(event.detail.value);
@@ -278,12 +319,14 @@ Page({
     });
   },
 
+  // 更新积分转移分值输入。
   onTransferAmountInput(event) {
     this.setData({
       transferAmount: event.detail.value,
     });
   },
 
+  // 提交积分转移请求，云函数负责最终权限和事务校验。
   submitTransfer() {
     if (this.data.submitting) return;
     const from = this.data.transferFromOptions[this.data.transferFromIndex];
@@ -324,6 +367,7 @@ Page({
       });
   },
 
+  // 房主撤销最近一次可撤销积分变更。
   undoLastAction() {
     if (this.data.submitting) return;
     wx.showModal({
@@ -347,6 +391,7 @@ Page({
     });
   },
 
+  // 房主关闭房间，关闭后仅保留查看能力。
   closeRoom() {
     wx.showModal({
       title: "关闭房间",
@@ -363,12 +408,14 @@ Page({
     });
   },
 
+  // 跳转到完整操作记录页。
   goRecords() {
     wx.navigateTo({
       url: `/pages/records/index?roomId=${this.data.roomId}`,
     });
   },
 
+  // 配置微信分享卡片，携带当前房间 ID。
   onShareAppMessage() {
     const room = this.data.room || {};
     return {

@@ -2,12 +2,17 @@ const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/ap
 
 Page({
   data: {
+    // 分享路径携带的房间 ID。
     roomId: "",
+    // 用户输入或扫码得到的房间码。
     roomCode: "",
+    // 加入房间时使用的显示昵称。
     nickname: "",
+    // 提交中状态，防止重复加入。
     submitting: false,
   },
 
+  // 接收首页、扫码或分享路径传入的房间参数。
   onLoad(options) {
     this.setData({
       roomId: options.roomId || "",
@@ -15,6 +20,7 @@ Page({
     });
   },
 
+  // 根据输入框绑定的 field 更新对应表单字段。
   onInput(event) {
     const { field } = event.currentTarget.dataset;
     this.setData({
@@ -22,6 +28,7 @@ Page({
     });
   },
 
+  // 提交加入房间请求，成功后进入房间详情页。
   submit() {
     if (this.data.submitting) return;
     const roomCode = String(this.data.roomCode || "").trim().toUpperCase();
