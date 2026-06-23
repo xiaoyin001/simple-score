@@ -36,6 +36,24 @@ page {
   padding: 24rpx;
   border-radius: 14rpx;
   background: #ffffff;
+  border-left: 8rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.record-card.record-positive {
+  border-left-color: #1f9d63;
+}
+
+.record-card.record-negative {
+  border-left-color: #d64532;
+}
+
+.record-card.record-transfer {
+  border-left-color: #2f80c4;
+}
+
+.record-card.record-undo {
+  border-left-color: #9ca3af;
 }
 
 .record-head {
@@ -70,8 +88,46 @@ page {
   color: #6b7280;
 }
 
+.record-amount {
+  font-weight: 700;
+}
+
+.record-amount.record-positive {
+  color: #12824f;
+}
+
+.record-amount.record-negative {
+  color: #c2412d;
+}
+
+.record-amount.record-transfer {
+  color: #2f80c4;
+}
+
+.record-amount.record-undo,
+.record-amount.record-neutral {
+  color: #6b7280;
+}
+
 .undone {
   margin-top: 14rpx;
   color: #b42318;
   font-size: 24rpx;
+}
+
+.undo-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 18rpx 0 0;
+  padding: 0 22rpx;
+  width: 100%;
+  height: 62rpx;
+  border-radius: 12rpx;
+  background: #fff7ed;
+  color: #b45309;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
 }

@@ -26,6 +26,20 @@ const TYPE_LABELS = {
   room_closed: "关闭房间",
 };
 
+const POSITIVE_RECORD_TYPES = ["member_add", "batch_add"];
+const NEGATIVE_RECORD_TYPES = ["member_subtract", "batch_subtract"];
+const TRANSFER_RECORD_TYPES = ["public_to_member", "member_to_public", "member_to_member"];
+const UNDOABLE_RECORD_TYPES = [
+  "member_add",
+  "member_subtract",
+  "batch_add",
+  "batch_subtract",
+  "public_to_member",
+  "member_to_public",
+  "member_to_member",
+];
+const RECENT_RECORD_PAGE_SIZE = 5;
+
 // 将记录时间格式化为房间页使用的短时间。
 function formatTime(value) {
   if (!value) return "";
@@ -34,17 +48,166 @@ function formatTime(value) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// 将原始操作记录转换为页面展示结构。
-function formatRecord(record) {
-  const targets = (record.targets || [])
-    .map((target) => target.nickname || target.name || (target.type === "public" ? "公共积分池" : "成员"))
+function getScoreTone(score) {
+  if (score > 0) return "score-positive";
+  if (score < 0) return "score-negative";
+  return "score-neutral";
+}
+
+function getRecordTone(record) {
+  if (POSITIVE_RECORD_TYPES.includes(record.type)) return "record-positive";
+  if (NEGATIVE_RECORD_TYPES.includes(record.type)) return "record-negative";
+  if (TRANSFER_RECORD_TYPES.includes(record.type)) return "record-transfer";
+  if (record.type === "undo") return "record-undo";
+  return "record-neutral";
+}
+
+function getAmountText(record) {
+  if (!record.amount) return "";
+  if (POSITIVE_RECORD_TYPES.includes(record.type)) return `+${record.amount}`;
+  if (NEGATIVE_RECORD_TYPES.includes(record.type)) return `-${record.amount}`;
+  if (TRANSFER_RECORD_TYPES.includes(record.type)) return `±${record.amount}`;
+  return `${record.amount}`;
+}
+
+function getTargetLabel(target, currentMemberId) {
+  if (target.type === "public") return "公共积分池";
+  if (target.memberId && target.memberId === currentMemberId) return "我";
+  return target.nickname || target.name || "成员";
+}
+
+function getTargetDelta(target) {
+  const beforeScore = Number(target.beforeScore || 0);
+  const afterScore = Number(target.afterScore || 0);
+  return afterScore - beforeScore;
+}
+
+function formatChangedTargets(record, currentMemberId) {
+  return (record.targets || [])
+    .map((target) => getTargetLabel(target, currentMemberId))
     .join("、");
+}
+
+function formatFlowTargets(record, currentMemberId) {
+  const targets = record.targets || [];
+  const sources = targets
+    .filter((target) => getTargetDelta(target) < 0)
+    .map((target) => getTargetLabel(target, currentMemberId));
+  const destinations = targets
+    .filter((target) => getTargetDelta(target) > 0)
+    .map((target) => getTargetLabel(target, currentMemberId));
+
+  if (sources.length && destinations.length) {
+    return `${sources.join("、")} → ${destinations.join("、")}`;
+  }
+
+  return targets.map((target) => getTargetLabel(target, currentMemberId)).join("、");
+}
+
+function getSnapshotMemberLabel(record, memberId, currentMemberId) {
+  const target = findRecordMemberTarget(record, memberId);
+  if (target) return getTargetLabel(target, currentMemberId);
+  if (memberId === currentMemberId) return "我";
+  return "成员";
+}
+
+function findRecordMemberTarget(record, memberId) {
+  return (record.targets || []).find(
+    (target) => target.type === "member" && target.memberId === memberId
+  );
+}
+
+function formatSnapshotFlow(record, currentMemberId) {
+  const beforeSnapshot = record.beforeSnapshot || {};
+  const afterSnapshot = record.afterSnapshot || {};
+  const flows = [];
+
+  if (beforeSnapshot.room && afterSnapshot.room) {
+    flows.push({
+      label: "公共积分池",
+      delta:
+        Number(afterSnapshot.room.publicScore || 0) -
+        Number(beforeSnapshot.room.publicScore || 0),
+    });
+  }
+
+  const beforeMemberMap = (beforeSnapshot.members || []).reduce((map, member) => {
+    map[member.memberId] = Number(member.score || 0);
+    return map;
+  }, {});
+  const afterMemberMap = (afterSnapshot.members || []).reduce((map, member) => {
+    map[member.memberId] = Number(member.score || 0);
+    return map;
+  }, {});
+  const memberIds = [
+    ...new Set([...Object.keys(beforeMemberMap), ...Object.keys(afterMemberMap)]),
+  ];
+
+  memberIds.forEach((memberId) => {
+    flows.push({
+      label: getSnapshotMemberLabel(record, memberId, currentMemberId),
+      delta: Number(afterMemberMap[memberId] || 0) - Number(beforeMemberMap[memberId] || 0),
+    });
+  });
+
+  const sources = flows.filter((flow) => flow.delta < 0).map((flow) => flow.label);
+  const destinations = flows.filter((flow) => flow.delta > 0).map((flow) => flow.label);
+  if (sources.length && destinations.length) {
+    return `${sources.join("、")} → ${destinations.join("、")}`;
+  }
+  return "";
+}
+
+function getRecordTargetsText(record, currentMemberId) {
+  if (POSITIVE_RECORD_TYPES.includes(record.type) || NEGATIVE_RECORD_TYPES.includes(record.type)) {
+    return formatChangedTargets(record, currentMemberId);
+  }
+
+  if (TRANSFER_RECORD_TYPES.includes(record.type)) {
+    return formatFlowTargets(record, currentMemberId);
+  }
+
+  if (record.type === "undo") {
+    const flowText =
+      formatSnapshotFlow(record, currentMemberId) || formatFlowTargets(record, currentMemberId);
+    return flowText ? `撤销：${flowText}` : "撤销操作";
+  }
+
+  const targets = (record.targets || [])
+    .map((target) => getTargetLabel(target, currentMemberId))
+    .join("、");
+  return targets || "房间";
+}
+
+// 将原始操作记录转换为页面展示结构。
+function formatRecord(record, currentMemberId) {
   return {
     ...record,
     displayType: TYPE_LABELS[record.type] || record.type,
-    displayTargets: targets || "房间",
+    displayOperator: record.operatorNickname || "成员",
+    displayTargets: getRecordTargetsText(record, currentMemberId),
     displayTime: formatTime(record.createdAt),
-    amountText: record.amount ? `${record.amount}` : "",
+    amountText: getAmountText(record),
+    toneClass: getRecordTone(record),
+    canUndo: UNDOABLE_RECORD_TYPES.includes(record.type) && !record.isUndone,
+  };
+}
+
+function buildRecentRecordPageState(records, page) {
+  const allRecords = records || [];
+  const totalPages = Math.max(1, Math.ceil(allRecords.length / RECENT_RECORD_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+  const start = (currentPage - 1) * RECENT_RECORD_PAGE_SIZE;
+
+  return {
+    allRecentRecords: allRecords,
+    recentRecords: allRecords.slice(start, start + RECENT_RECORD_PAGE_SIZE),
+    recentRecordPage: currentPage,
+    recentRecordTotalPages: totalPages,
+    recentRecordPageText: `${currentPage}/${totalPages}`,
+    showRecentRecordPager: allRecords.length > RECENT_RECORD_PAGE_SIZE,
+    canPrevRecentRecordPage: currentPage > 1,
+    canNextRecentRecordPage: currentPage < totalPages,
   };
 }
 
@@ -60,8 +223,22 @@ Page({
     room: null,
     // 当前活跃成员列表。
     members: [],
+    // 最近操作记录完整列表，用于房间页分页。
+    allRecentRecords: [],
     // 最近操作记录展示列表。
     recentRecords: [],
+    // 最近操作记录当前页码。
+    recentRecordPage: 1,
+    // 最近操作记录总页数。
+    recentRecordTotalPages: 1,
+    // 最近操作记录页码展示文本。
+    recentRecordPageText: "1/1",
+    // 最近操作记录是否显示分页控件。
+    showRecentRecordPager: false,
+    // 最近操作记录是否可翻到上一页。
+    canPrevRecentRecordPage: false,
+    // 最近操作记录是否可翻到下一页。
+    canNextRecentRecordPage: false,
     // 当前用户是否为房主。
     isOwner: false,
     // 当前用户是否可发起积分转移。
@@ -106,15 +283,21 @@ Page({
     this.setData({ loading: true });
     return callScoreFunction("getRoom", { roomId: this.data.roomId })
       .then((result) => {
-        const members = result.members || [];
+        const members = (result.members || []).map((member) => ({
+          ...member,
+          scoreTone: getScoreTone(member.score || 0),
+        }));
         const isOwner = result.currentUserRole === "owner";
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
         const transferState = this.buildTransferOptions(members, isOwner, currentMemberId, 0);
+        const formattedRecords = (result.recentRecords || []).map((record) =>
+          formatRecord(record, currentMemberId)
+        );
         this.setData({
           room: result.room,
           members,
-          recentRecords: (result.recentRecords || []).map(formatRecord),
+          ...buildRecentRecordPageState(formattedRecords, 1),
           isOwner,
           canTransfer: isOwner || !!currentMemberId,
           currentMemberId,
@@ -134,6 +317,15 @@ Page({
         this.setData({ loading: false });
         showError(error);
       });
+  },
+
+  // 切换房间页最近记录分页。
+  changeRecentRecordPage(event) {
+    const direction = event.currentTarget.dataset.direction;
+    const offset = direction === "next" ? 1 : -1;
+    this.setData(
+      buildRecentRecordPageState(this.data.allRecentRecords, this.data.recentRecordPage + offset)
+    );
   },
 
   // 构建积分转移的转出和转入选项，普通成员只开放受限选项。
@@ -367,17 +559,22 @@ Page({
       });
   },
 
-  // 房主撤销最近一次可撤销积分变更。
-  undoLastAction() {
+  // 房主撤销指定的一条可撤销积分记录。
+  undoRecord(event) {
     if (this.data.submitting) return;
+    const { recordId, title } = event.currentTarget.dataset;
+    if (!recordId) return;
     wx.showModal({
-      title: "撤销最近操作",
-      content: "仅撤销最近一次积分变更，并会新增一条撤销记录。",
+      title: "撤销该记录",
+      content: `确认撤销「${title || "该积分变更"}」？撤销后会新增一条撤销记录。`,
       success: (res) => {
         if (!res.confirm) return;
         this.setData({ submitting: true });
         wx.showLoading({ title: "撤销中" });
-        callScoreFunction("undoLastAction", { roomId: this.data.roomId })
+        callScoreFunction("undoLastAction", {
+          roomId: this.data.roomId,
+          recordId,
+        })
           .then(() => {
             wx.showToast({ title: "已撤销", icon: "success" });
             return this.loadRoom();

@@ -135,6 +135,21 @@ function parsePositiveAmount(value) {
   return amount;
 }
 
+function buildScoreMap(members = []) {
+  return members.reduce((map, member) => {
+    if (member && member.memberId) {
+      map[member.memberId] = Number(member.score || 0);
+    }
+    return map;
+  }, {});
+}
+
+function findRecordMemberTarget(record, memberId) {
+  return (record.targets || []).find(
+    (target) => target.type === "member" && target.memberId === memberId
+  );
+}
+
 // 构造成员昵称，未填写时使用成员序号兜底。
 function buildNickname(input, fallbackIndex) {
   const nickname = normalizeText(input);
@@ -919,17 +934,36 @@ async function undoLastAction(event) {
 
     await db.runTransaction(async (transaction) => {
       const changedAt = now();
-      const beforeSnapshot = record.afterSnapshot || {};
-      const afterSnapshot = record.beforeSnapshot || {};
-      const beforeMembers = beforeSnapshot.members || [];
-      const afterMembers = afterSnapshot.members || [];
+      const originalBeforeSnapshot = record.beforeSnapshot || {};
+      const originalAfterSnapshot = record.afterSnapshot || {};
+      const undoBeforeSnapshot = {};
+      const undoAfterSnapshot = {};
+      const undoTargets = [];
 
-      if (afterSnapshot.room) {
+      if (originalBeforeSnapshot.room && originalAfterSnapshot.room) {
+        const currentRoomResult = await transaction
+          .collection("rooms")
+          .doc(roomId)
+          .get();
+        const currentRoom = currentRoomResult.data || {};
+        const currentPublicScore = Number(currentRoom.publicScore || 0);
+        const publicDelta =
+          Number(originalBeforeSnapshot.room.publicScore || 0) -
+          Number(originalAfterSnapshot.room.publicScore || 0);
+        const nextPublicScore = currentPublicScore + publicDelta;
+
         await transaction.collection("rooms").doc(roomId).update({
           data: {
-            publicScore: afterSnapshot.room.publicScore || 0,
+            publicScore: nextPublicScore,
             updatedAt: changedAt,
           },
+        });
+        undoBeforeSnapshot.room = { publicScore: currentPublicScore };
+        undoAfterSnapshot.room = { publicScore: nextPublicScore };
+        undoTargets.push({
+          type: "public",
+          beforeScore: currentPublicScore,
+          afterScore: nextPublicScore,
         });
       } else {
         await transaction.collection("rooms").doc(roomId).update({
@@ -937,14 +971,51 @@ async function undoLastAction(event) {
         });
       }
 
-      for (const member of afterMembers) {
-        await transaction.collection("room_members").doc(member.memberId).update({
+      const beforeMemberMap = buildScoreMap(originalBeforeSnapshot.members || []);
+      const afterMemberMap = buildScoreMap(originalAfterSnapshot.members || []);
+      const memberIds = [
+        ...new Set([
+          ...Object.keys(beforeMemberMap),
+          ...Object.keys(afterMemberMap),
+        ]),
+      ];
+      const undoBeforeMembers = [];
+      const undoAfterMembers = [];
+
+      for (const memberId of memberIds) {
+        const memberResult = await transaction
+          .collection("room_members")
+          .doc(memberId)
+          .get();
+        const member = memberResult.data;
+        if (!member || member.roomId !== roomId) throw new Error("成员不存在");
+
+        const currentScore = Number(member.score || 0);
+        const memberDelta =
+          Number(beforeMemberMap[memberId] || 0) - Number(afterMemberMap[memberId] || 0);
+        const nextScore = currentScore + memberDelta;
+        const recordTarget = findRecordMemberTarget(record, memberId);
+
+        undoBeforeMembers.push({ memberId, score: currentScore });
+        undoAfterMembers.push({ memberId, score: nextScore });
+        undoTargets.push({
+          type: "member",
+          memberId,
+          nickname: (recordTarget && recordTarget.nickname) || member.nickname,
+          beforeScore: currentScore,
+          afterScore: nextScore,
+        });
+
+        await transaction.collection("room_members").doc(memberId).update({
           data: {
-            score: member.score || 0,
+            score: nextScore,
             updatedAt: changedAt,
           },
         });
       }
+
+      if (undoBeforeMembers.length) undoBeforeSnapshot.members = undoBeforeMembers;
+      if (undoAfterMembers.length) undoAfterSnapshot.members = undoAfterMembers;
 
       const undoResult = await transaction.collection("score_records").add({
         data: {
@@ -952,13 +1023,10 @@ async function undoLastAction(event) {
           operatorOpenid: wxContext.OPENID,
           operatorNickname,
           type: RECORD_TYPE.UNDO,
-          targets: record.targets || [],
+          targets: undoTargets,
           amount: record.amount || 0,
-          beforeSnapshot: {
-            room: beforeSnapshot.room,
-            members: beforeMembers,
-          },
-          afterSnapshot,
+          beforeSnapshot: undoBeforeSnapshot,
+          afterSnapshot: undoAfterSnapshot,
           remark: "撤销操作",
           isUndone: false,
           undoRecordId: record._id,

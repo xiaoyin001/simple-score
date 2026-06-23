@@ -24,7 +24,7 @@
       <view class="section-title">成员排行</view>
       <button
         wx:if="{{isOwner && room.status === 'active'}}"
-        class="text-button"
+        class="text-button batch-toggle {{batchMode ? 'active' : ''}}"
         bindtap="toggleBatchMode"
       >
         {{batchMode ? '取消批量' : '批量'}}
@@ -33,18 +33,20 @@
 
     <checkbox-group bindchange="onBatchChange">
       <view class="member-card" wx:for="{{members}}" wx:key="_id">
-        <label class="member-check" wx:if="{{batchMode}}">
-          <checkbox value="{{item._id}}" color="#1f7a5a" />
-        </label>
-        <view class="rank">{{index + 1}}</view>
-        <view class="member-main">
-          <view class="member-name">{{item.nickname}}</view>
-          <view class="member-role">{{item.role === 'owner' ? '房主' : '成员'}}</view>
+        <view class="member-info">
+          <label class="member-check" wx:if="{{batchMode}}">
+            <checkbox value="{{item._id}}" color="#1f7a5a" />
+          </label>
+          <view class="rank">{{index + 1}}</view>
+          <view class="member-main">
+            <view class="member-name">{{item.nickname}}</view>
+            <view class="member-role">{{item.role === 'owner' ? '房主' : '成员'}}</view>
+          </view>
+          <view class="member-score {{item.scoreTone}}">{{item.score}}</view>
         </view>
-        <view class="member-score">{{item.score}}</view>
         <view class="member-actions" wx:if="{{isOwner && room.status === 'active' && !batchMode}}">
           <button
-            class="mini-button add"
+            class="score-action add"
             data-member-id="{{item._id}}"
             data-nickname="{{item.nickname}}"
             data-action="add"
@@ -53,7 +55,7 @@
             加
           </button>
           <button
-            class="mini-button subtract"
+            class="score-action subtract"
             data-member-id="{{item._id}}"
             data-nickname="{{item.nickname}}"
             data-action="subtract"
@@ -112,23 +114,54 @@
   <view class="section">
     <view class="section-head">
       <view class="section-title">最近记录</view>
-      <button class="text-button" bindtap="goRecords">全部</button>
+      <button class="text-button records-all-button" bindtap="goRecords">全部</button>
     </view>
     <view class="record-empty" wx:if="{{!recentRecords.length}}">暂无记录</view>
-    <view class="record-item" wx:for="{{recentRecords}}" wx:key="_id">
-      <view>
+    <view class="record-item {{item.toneClass}}" wx:for="{{recentRecords}}" wx:key="_id">
+      <view class="record-main">
         <view class="record-title">{{item.displayType}}</view>
-        <view class="record-desc">{{item.displayTargets}} {{item.amountText}}</view>
+        <view class="record-operator">操作人：{{item.displayOperator}}</view>
+        <view class="record-desc">
+          {{item.displayTargets}}
+          <text wx:if="{{item.amountText}}" class="record-amount {{item.toneClass}}">{{item.amountText}}</text>
+        </view>
       </view>
       <view class="record-right">
         <view class="record-time">{{item.displayTime}}</view>
         <view class="undone" wx:if="{{item.isUndone}}">已撤销</view>
+        <button
+          wx:if="{{isOwner && room.status === 'active' && item.canUndo}}"
+          class="undo-button"
+          data-record-id="{{item._id}}"
+          data-title="{{item.displayType}}"
+          bindtap="undoRecord"
+        >
+          撤销
+        </button>
       </view>
+    </view>
+    <view class="record-pager" wx:if="{{showRecentRecordPager}}">
+      <button
+        class="pager-button"
+        disabled="{{!canPrevRecentRecordPage}}"
+        data-direction="prev"
+        bindtap="changeRecentRecordPage"
+      >
+        上一页
+      </button>
+      <view class="pager-text">{{recentRecordPageText}}</view>
+      <button
+        class="pager-button"
+        disabled="{{!canNextRecentRecordPage}}"
+        data-direction="next"
+        bindtap="changeRecentRecordPage"
+      >
+        下一页
+      </button>
     </view>
   </view>
 
   <view class="footer-actions" wx:if="{{isOwner && room.status === 'active'}}">
-    <button class="footer-button" bindtap="undoLastAction">撤销最近操作</button>
     <button class="footer-button danger" bindtap="closeRoom">关闭房间</button>
   </view>
 </view>

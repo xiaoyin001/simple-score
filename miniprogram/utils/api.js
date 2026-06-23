@@ -1,5 +1,22 @@
 const runtimeConfig = require("../config/runtime");
 
+const LOCAL_OPENID_STORAGE_KEY = "localMockOpenid";
+
+function getLocalMockOpenid() {
+  return wx.getStorageSync(LOCAL_OPENID_STORAGE_KEY) || runtimeConfig.localMockOpenid;
+}
+
+function setLocalMockOpenid(openid) {
+  wx.setStorageSync(LOCAL_OPENID_STORAGE_KEY, openid || runtimeConfig.localMockOpenid);
+}
+
+function getRuntimeInfo() {
+  return {
+    backendMode: runtimeConfig.backendMode,
+    localMockOpenid: getLocalMockOpenid(),
+  };
+}
+
 // 统一校验后端返回结构，失败时转成页面可展示的 Error。
 function normalizeResult(result) {
   if (!result || !result.success) {
@@ -18,7 +35,7 @@ function callLocalScoreFunction(type, data = {}) {
         // 请求内容类型，本地服务按 JSON 解析。
         "content-type": "application/json",
         // 本地模拟 openid，保持权限逻辑仍由后端处理。
-        "x-simple-score-openid": runtimeConfig.localMockOpenid,
+        "x-simple-score-openid": getLocalMockOpenid(),
       },
       data: {
         // 云函数 action 类型。
@@ -94,6 +111,8 @@ function saveRecentRoom(room) {
 
 module.exports = {
   callScoreFunction,
+  getRuntimeInfo,
   saveRecentRoom,
+  setLocalMockOpenid,
   showError,
 };

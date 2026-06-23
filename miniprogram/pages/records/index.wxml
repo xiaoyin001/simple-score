@@ -3,16 +3,25 @@
   <view class="subtitle">最近 50 条房间记录</view>
 
   <view class="empty" wx:if="{{!records.length}}">暂无记录</view>
-  <view class="record-card" wx:for="{{records}}" wx:key="_id">
+  <view class="record-card {{item.toneClass}}" wx:for="{{records}}" wx:key="_id">
     <view class="record-head">
       <view class="record-type">{{item.displayType}}</view>
       <view class="record-time">{{item.displayTime}}</view>
     </view>
-    <view class="record-line">操作人：{{item.operatorNickname || '成员'}}</view>
+    <view class="record-line">操作人：{{item.displayOperator}}</view>
     <view class="record-line">对象：{{item.displayTargets}}</view>
-    <view class="record-line">分值：{{item.amountText}}</view>
+    <view class="record-line">分值：<text class="record-amount {{item.toneClass}}">{{item.amountText}}</text></view>
     <view class="record-remark" wx:if="{{item.remark}}">{{item.remark}}</view>
     <view class="undone" wx:if="{{item.isUndone}}">该操作已被撤销</view>
+    <button
+      wx:if="{{isOwner && room.status === 'active' && item.canUndo}}"
+      class="undo-button"
+      data-record-id="{{item._id}}"
+      data-title="{{item.displayType}}"
+      bindtap="undoRecord"
+    >
+      撤销这条记录
+    </button>
   </view>
 </view>
 
