@@ -1,0 +1,124 @@
+page {
+  background: #f4f5f7;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 48rpx 32rpx 64rpx;
+  box-sizing: border-box;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 36rpx 0 24rpx;
+}
+
+.app-name {
+  color: #111827;
+  font-size: 56rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.tagline {
+  margin-top: 14rpx;
+  color: #5b6472;
+  font-size: 28rpx;
+}
+
+.badge {
+  flex-shrink: 0;
+  margin-top: 10rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #e8f7ef;
+  color: #137a4a;
+  font-size: 24rpx;
+}
+
+.action-panel {
+  margin-top: 36rpx;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 32rpx rgba(15, 23, 42, 0.08);
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 92rpx;
+  margin-left: 0;
+  margin-right: 0;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  line-height: 1;
+}
+
+.primary-button {
+  background: #1f7a5a;
+  color: #ffffff;
+}
+
+.secondary-button {
+  margin-top: 18rpx;
+  background: #eef7f3;
+  color: #185d46;
+}
+
+.ghost-button {
+  margin-top: 18rpx;
+  background: #f7f8fa;
+  color: #374151;
+}
+
+.section {
+  margin-top: 36rpx;
+}
+
+.section-title {
+  margin-bottom: 16rpx;
+  color: #111827;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+  padding: 24rpx;
+  border-radius: 14rpx;
+  background: #ffffff;
+}
+
+.recent-name {
+  color: #111827;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.recent-code {
+  margin-top: 8rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+}
+
+.recent-arrow {
+  color: #1f7a5a;
+  font-size: 26rpx;
+}
+
+.notice {
+  margin-top: 36rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+  line-height: 1.7;
+}

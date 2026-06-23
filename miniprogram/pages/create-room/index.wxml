@@ -1,0 +1,59 @@
+<view class="page">
+  <view class="title">创建记分房间</view>
+  <view class="subtitle">房间有效期默认 24 小时，成员初始积分为 0。</view>
+
+  <view class="form">
+    <view class="field">
+      <view class="label">房间名称</view>
+      <input
+        class="input"
+        maxlength="20"
+        placeholder="例如：周末活动积分"
+        value="{{name}}"
+        data-field="name"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field">
+      <view class="label">我的昵称</view>
+      <input
+        class="input"
+        maxlength="20"
+        placeholder="不填则显示为成员1"
+        value="{{nickname}}"
+        data-field="nickname"
+        bindinput="onInput"
+      />
+    </view>
+
+    <view class="field-row">
+      <view class="field compact">
+        <view class="label">人数上限</view>
+        <input
+          class="input"
+          type="number"
+          value="{{memberLimit}}"
+          data-field="memberLimit"
+          bindinput="onInput"
+        />
+        <view class="hint">2 到 12 人</view>
+      </view>
+      <view class="field compact">
+        <view class="label">公共积分</view>
+        <input
+          class="input"
+          type="number"
+          value="{{publicScore}}"
+          data-field="publicScore"
+          bindinput="onInput"
+        />
+        <view class="hint">默认 0</view>
+      </view>
+    </view>
+  </view>
+
+  <button class="submit" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submit">
+    创建并进入
+  </button>
+</view>

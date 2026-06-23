@@ -1,0 +1,136 @@
+<view class="page" wx:if="{{!loading && room}}">
+  <view class="room-header">
+    <view>
+      <view class="room-name">{{room.name}}</view>
+      <view class="room-meta">房间码 {{room.roomCode}} · {{members.length}}/{{room.memberLimit}} 人</view>
+    </view>
+    <button class="copy-button" bindtap="copyRoomCode">复制</button>
+  </view>
+
+  <view class="status-bar" wx:if="{{room.status !== 'active'}}">
+    当前房间已{{room.status === 'closed' ? '关闭' : '过期'}}，只能查看结果。
+  </view>
+
+  <view class="score-panel">
+    <view>
+      <view class="panel-label">公共积分池</view>
+      <view class="public-score">{{room.publicScore}}</view>
+    </view>
+    <button class="share-button" open-type="share">分享房间</button>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">成员排行</view>
+      <button
+        wx:if="{{isOwner && room.status === 'active'}}"
+        class="text-button"
+        bindtap="toggleBatchMode"
+      >
+        {{batchMode ? '取消批量' : '批量'}}
+      </button>
+    </view>
+
+    <checkbox-group bindchange="onBatchChange">
+      <view class="member-card" wx:for="{{members}}" wx:key="_id">
+        <label class="member-check" wx:if="{{batchMode}}">
+          <checkbox value="{{item._id}}" color="#1f7a5a" />
+        </label>
+        <view class="rank">{{index + 1}}</view>
+        <view class="member-main">
+          <view class="member-name">{{item.nickname}}</view>
+          <view class="member-role">{{item.role === 'owner' ? '房主' : '成员'}}</view>
+        </view>
+        <view class="member-score">{{item.score}}</view>
+        <view class="member-actions" wx:if="{{isOwner && room.status === 'active' && !batchMode}}">
+          <button
+            class="mini-button add"
+            data-member-id="{{item._id}}"
+            data-nickname="{{item.nickname}}"
+            data-action="add"
+            bindtap="updateMemberScore"
+          >
+            加
+          </button>
+          <button
+            class="mini-button subtract"
+            data-member-id="{{item._id}}"
+            data-nickname="{{item.nickname}}"
+            data-action="subtract"
+            bindtap="updateMemberScore"
+          >
+            扣
+          </button>
+        </view>
+      </view>
+    </checkbox-group>
+
+    <view class="batch-actions" wx:if="{{batchMode}}">
+      <button class="batch-button add" data-action="add" bindtap="runBatch">批量加分</button>
+      <button class="batch-button subtract" data-action="subtract" bindtap="runBatch">批量扣分</button>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{canTransfer && room.status === 'active'}}">
+    <view class="section-title">积分转移</view>
+    <view class="transfer-card">
+      <view class="transfer-row">
+        <picker
+          class="picker"
+          range="{{transferFromOptions}}"
+          range-key="label"
+          value="{{transferFromIndex}}"
+          data-field="transferFromIndex"
+          bindchange="onTransferPicker"
+        >
+          <view class="picker-value">从 {{transferFromOptions[transferFromIndex].label}}</view>
+        </picker>
+        <picker
+          class="picker"
+          range="{{transferToOptions}}"
+          range-key="label"
+          value="{{transferToIndex}}"
+          data-field="transferToIndex"
+          bindchange="onTransferPicker"
+        >
+          <view class="picker-value">到 {{transferToOptions[transferToIndex].label}}</view>
+        </picker>
+      </view>
+      <view class="transfer-row">
+        <input
+          class="transfer-input"
+          type="number"
+          placeholder="分值"
+          value="{{transferAmount}}"
+          bindinput="onTransferAmountInput"
+        />
+        <button class="transfer-button" bindtap="submitTransfer">转移</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">最近记录</view>
+      <button class="text-button" bindtap="goRecords">全部</button>
+    </view>
+    <view class="record-empty" wx:if="{{!recentRecords.length}}">暂无记录</view>
+    <view class="record-item" wx:for="{{recentRecords}}" wx:key="_id">
+      <view>
+        <view class="record-title">{{item.displayType}}</view>
+        <view class="record-desc">{{item.displayTargets}} {{item.amountText}}</view>
+      </view>
+      <view class="record-right">
+        <view class="record-time">{{item.displayTime}}</view>
+        <view class="undone" wx:if="{{item.isUndone}}">已撤销</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="footer-actions" wx:if="{{isOwner && room.status === 'active'}}">
+    <button class="footer-button" bindtap="undoLastAction">撤销最近操作</button>
+    <button class="footer-button danger" bindtap="closeRoom">关闭房间</button>
+  </view>
+</view>
+
+<view class="loading" wx:else>加载中...</view>
