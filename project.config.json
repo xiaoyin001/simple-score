@@ -45,7 +45,7 @@
     "disableSWC": true
   },
   "appid": "wx12d21f8570ecd8f2",
-  "projectname": "simple-score",
+  "projectname": "简单记分鸭",
   "libVersion": "2.20.1",
   "condition": {
     "search": {

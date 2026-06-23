@@ -1,7 +1,7 @@
 <view class="page">
   <view class="hero">
     <view>
-      <view class="app-name">简单记分</view>
+      <view class="app-name">简单记分鸭</view>
       <view class="tagline">多人活动记分工具</view>
     </view>
     <view class="badge">最多 12 人</view>
@@ -47,6 +47,6 @@
   </view>
 
   <view class="notice">
-    适用于聚会小游戏、桌游、亲子任务和团队活动，快速创建房间并记录积分变化。
+    简单记分鸭适用于聚会小游戏、桌游、亲子任务和团队活动，快速创建房间并记录积分变化。
   </view>
 </view>

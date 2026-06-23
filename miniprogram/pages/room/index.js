@@ -698,7 +698,7 @@ Page({
   onShareAppMessage() {
     const room = this.data.room || {};
     return {
-      title: `加入我的记分房间：${room.name || "简单记分"}`,
+      title: `加入我的记分房间：${room.name || "简单记分鸭"}`,
       path: `/pages/index/index?roomId=${room._id || this.data.roomId}`,
     };
   },
