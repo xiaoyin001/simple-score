@@ -78,54 +78,6 @@ page {
   color: #374151;
 }
 
-.dev-panel {
-  margin-top: 24rpx;
-  padding: 24rpx;
-  border-radius: 14rpx;
-  background: #ffffff;
-  border: 2rpx dashed #9ca3af;
-}
-
-.dev-title {
-  color: #111827;
-  font-size: 26rpx;
-  font-weight: 700;
-}
-
-.dev-current {
-  margin-top: 8rpx;
-  color: #6b7280;
-  font-size: 23rpx;
-}
-
-.dev-users {
-  display: flex;
-  gap: 12rpx;
-  margin-top: 16rpx;
-}
-
-.dev-user-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-  height: 58rpx;
-  margin: 0;
-  padding: 0 8rpx;
-  border-radius: 10rpx;
-  background: #f7f8fa;
-  color: #374151;
-  font-size: 21rpx;
-  line-height: 1;
-  box-sizing: border-box;
-}
-
-.dev-user-button.active {
-  background: #1f7a5a;
-  color: #ffffff;
-}
-
 .section {
   margin-top: 36rpx;
 }

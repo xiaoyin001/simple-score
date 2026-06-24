@@ -25,8 +25,6 @@ miniprogram/
   app.js
   app.json
   app.wxss
-  config/
-    runtime.js      运行环境和后端调用模式配置
   pages/
     index/          首页
     create-room/    创建房间
@@ -37,8 +35,6 @@ miniprogram/
     api.js          云函数调用封装
 cloudfunctions/
   scoreFunctions/   记分业务云函数
-local-server/
-  server.js          开发期本地模拟服务
 docs/
   codex-workflow.md Codex 迭代工作流
   requirements.md   产品需求
@@ -123,26 +119,11 @@ nickname
 callScoreFunction(type, data)
 ```
 
-`miniprogram/config/runtime.js` 控制开发期后端模式：
+小程序启动时通过 `wx.cloud.init({ traceUser: true })` 初始化云开发，并使用开发者工具当前关联的小程序云环境。前端不再包含本地后端模式、本地模拟 openid 或本地服务地址配置。
 
-```text
-backendMode: cloud | local
-cloudEnvId: 指定微信云开发环境 ID，留空时使用默认环境
-localServerUrl: 本地模拟服务地址
-localMockOpenid: 本地模拟用户标识
-```
+所有记分、权限、房间状态、成员关系和记录写入仍由 `scoreFunctions` 处理，前端只负责展示、输入和调用云函数。
 
-默认 `backendMode` 为 `cloud`，通过 `wx.cloud.callFunction` 调用云函数。开发期可临时切换为 `local`，由 `wx.request` 请求本地模拟服务；本地服务必须保持与 `scoreFunctions` 相同的 action、权限校验和返回结构，不能让前端直接修改积分、房间状态、成员关系或积分记录。
-
-本地模拟服务位于 `local-server/server.js`，默认监听：
-
-```text
-http://127.0.0.1:3000/scoreFunctions
-```
-
-它使用 `local-server/data/db.json` 模拟 `rooms`、`room_members`、`score_records` 三个集合。该数据文件只用于本地调试，不提交到仓库。
-
-本地开发模式下，首页会展示“开发测试身份”切换区。切换后，小程序请求本地模拟服务时会使用不同的模拟 openid，便于在同一开发工具中测试多人加入、成员权限和不同成员视角下的记录展示。云端模式不会展示该入口。
+当前已验证的云开发环境 ID 为 `cloud1-d0g5o9l1ada4cc67e`。CloudBase CLI 登录、只读检查和部署命令统一记录在 `docs/cloudbase-access.md`。
 
 当前操作类型：
 
@@ -276,7 +257,7 @@ createdAt
 
 ## 7. 发布前检查
 
-1. `miniprogram/config/runtime.js` 中 `backendMode` 已切回 `cloud`，云环境 ID 已配置或使用默认环境。
+1. 微信开发者工具当前项目已关联可用的云开发环境。
 2. `scoreFunctions` 已上传并部署云端安装依赖。
 3. 云数据库集合存在：`rooms`、`room_members`、`score_records`。
 4. 微信开发者工具中完成创建、加入、加扣分、批量、转移、撤销、关闭和分享验证。

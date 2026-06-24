@@ -13,22 +13,6 @@
     <button class="ghost-button" bindtap="scanJoin">扫码加入</button>
   </view>
 
-  <view class="dev-panel" wx:if="{{isLocalBackend}}">
-    <view class="dev-title">开发测试身份</view>
-    <view class="dev-current">当前：{{localMockOpenid}}</view>
-    <view class="dev-users">
-      <button
-        wx:for="{{localMockUsers}}"
-        wx:key="*this"
-        class="dev-user-button {{item === localMockOpenid ? 'active' : ''}}"
-        data-openid="{{item}}"
-        bindtap="switchLocalMockUser"
-      >
-        {{item}}
-      </button>
-    </view>
-  </view>
-
   <view class="section" wx:if="{{recentRooms.length}}">
     <view class="section-title">最近进入</view>
     <view

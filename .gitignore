@@ -4,9 +4,8 @@ node_modules/
 # 微信开发者工具本地配置
 project.private.config.json
 
-# 本地 Codex 和项目说明
+# 本地 Codex 规则
 AGENTS.md
-docs/
 
 # 日志文件
 *.log
