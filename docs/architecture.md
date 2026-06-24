@@ -53,6 +53,10 @@ docs/
 2. 提供创建房间、输入房间码、扫码加入入口。
 3. 展示最近进入过的房间。
 4. 接收分享路径中的 `roomId` 或 `roomCode`，跳转加入流程。
+5. 展示当前用户头像和默认名；用户可通过微信授权或头像昵称能力获取资料，也可直接编辑默认名。
+6. 当前用户资料保存在本地 `userProfile` 缓存中，不作为云端账号资料单独维护。
+7. 默认名编辑采用草稿态：点击身份胶囊中的名称或编辑入口进入编辑，输入时只更新草稿，点击保存后才写入本地 `userProfile.defaultName`；点击取消丢弃草稿。
+8. 默认名不能为空，最多 20 个字符。保存成功后首页提示“默认名已保存”。
 
 ### 3.2 创建房间
 
@@ -65,7 +69,10 @@ name
 memberLimit
 publicScore
 nickname
+avatarUrl
 ```
+
+`nickname` 默认读取首页设置的默认名，用户仍可在创建页临时改成本房间内显示名。
 
 成功后：
 
@@ -87,6 +94,8 @@ nickname
 1. 写入本地最近房间。
 2. 跳转到房间页。
 
+加入页的 `nickname` 默认读取首页设置的默认名，并随请求一起传递本地头像 `avatarUrl`；用户在加入页修改昵称只影响本次加入，不自动改写首页默认名。
+
 ### 3.4 房间页
 
 路径：`pages/room/index`
@@ -101,6 +110,9 @@ nickname
 6. 普通成员可查看、分享，并发起受限积分转移：自己的积分转给他人或公共积分池、公共积分池转给自己。
 7. 当前成员仍有一次改名机会时，在本人昵称旁显示编辑 icon 按钮；改名通过云函数 `updateNickname` 完成，前端不直接写成员数据。
 8. 最近房间入口来自本地 `recentRooms` 缓存，可能指向已被云端清理的房间；房间不存在时只提示用户，不删除本地缓存。
+9. 房间页通过 CloudBase 数据库 `watch()` 监听当前房间相关数据：`rooms` 按 `_id + memberOpenids` 监听当前房间，`room_members` 按 `roomId + active` 监听当前成员，`score_records` 按 `roomId` 监听当前房间记录。
+10. 监听只负责展示同步；客户端不直接写 `rooms`、`room_members` 或 `score_records`。页面隐藏或卸载时关闭 watcher，重新显示时重新建立监听。
+11. 云数据库权限必须允许当前房间成员读取对应房间数据，但写权限仍应通过云函数收口。
 
 ### 3.5 记录页
 
@@ -157,6 +169,7 @@ roomCode
 name
 ownerOpenid
 ownerNickname
+memberOpenids
 memberLimit
 publicScore
 status
@@ -233,8 +246,9 @@ createdAt
 2. 人数上限为 2 到 12。
 3. 房间默认可操作有效期为 24 小时，`expireAt` 控制加入和写操作截止时间。
 4. 已关闭或已过期房间不可继续修改积分；过期但未清理的房间仍可只读查看房间信息、成员积分和操作记录。
-5. 云端房间数据默认保留 7 天，`purgeAt` 控制 `cleanupExpiredRooms` 的物理清理时间；清理范围只包含云数据库，不清理小程序本地 `recentRooms`。
+5. 云端房间数据默认保留 7 天，`purgeAt` 控制 `cleanupExpiredRooms` 的物理清理时间；清理范围包含云端房间、成员和记录，不清理小程序本地 `recentRooms`。
 6. 同一用户重复加入同一房间时返回已有成员，不重复占用名额。
+7. `memberOpenids` 记录当前房间 active 成员 openid，用于 CloudBase 数据库监听的房间级读权限判断；创建、加入和 `getRoom` 读取时由云函数维护或回填。
 
 ### 6.2 权限
 
@@ -243,6 +257,7 @@ createdAt
 3. 普通成员只能将自己的积分转给其他成员或公共积分池，也只能从公共积分池转给自己。
 4. 权限判断全部在云函数中完成。
 5. 成员只能通过 `updateNickname` 修改自己的昵称一次；云函数以当前 openid 查找 active 成员并校验 `nicknameEdited`。
+6. 数据库安全规则应允许 `memberOpenids` 中的房间成员读取对应房间、成员和记录数据；客户端写权限仍保持关闭，写操作只通过云函数。
 
 ### 6.3 积分
 

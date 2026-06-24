@@ -23,6 +23,214 @@
 
 ## 当前反馈
 
+### 2026-06-24 主动操作后整页重新加载影响体验
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 / 主动操作 / 多人同步 / 局部渲染
+结果：negative
+分值：-8
+严重度：4
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`updateNickname`、`updateMemberScore`、`runBatch`、`submitTransfer`、`undoRecord`、`closeRoom`
+- `docs/room-sync-plan.md`：主动操作后的局部更新策略
+- `docs/requirements.md`：房间页性能和同步验收要求
+问题对应关系：
+- 每次主动操作后出现整页“加载中”：对应操作成功后调用 `loadRoom()`，而 `loadRoom()` 会设置 `loading: true`，触发整页 loading 分支。
+- 用户期望只更新改动部分：对应同步架构已经有 `rooms`、`room_members`、`score_records` 三个 watcher，可按区域更新，不需要主动操作后整页回拉。
+现象：转移等操作成功后页面先显示全页“加载中...”，再回到房间页，造成明显闪烁和重复渲染。
+根因或推测：从主动拉取模式迁移到 watch 同步后，旧的操作成功后 `loadRoom()` 逻辑未清理。
+处理方式：移除改名、单人加扣、批量加扣、转移、撤销和关闭房间成功后的 `loadRoom()`；保留首次进入和下拉刷新完整加载；操作结果交给 watcher 局部更新。
+是否需要新增自动检查或测试：需要人工在微信开发者工具中验证主动操作后不再出现全页 loading，且公共积分池、成员排行和最近记录仍会局部更新。
+```
+
+### 2026-06-24 公共积分池在多人房间中未随记录同步
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 / 多人同步 / 公共积分池 / 积分转移
+结果：negative
+分值：-9
+严重度：5
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`applyRecordsSnapshot`、`getLatestPublicScoreFromRecords`
+- `docs/room-sync-plan.md`：`score_records` 局部更新规则
+问题对应关系：
+- 成员积分和最近记录已经同步，但公共积分池仍显示旧值：对应 `room_members` 和 `score_records` watcher 已生效，而 `rooms` 快照未稳定驱动 `room.publicScore` 展示。
+- 转移记录本身包含 `afterSnapshot.room.publicScore`：对应前端可以从记录快照补齐公共积分池的展示同步，不需要客户端直接写数据库。
+现象：A 端公共积分池显示 6，B 端同房间仍显示 0；同时 B 端成员分数和最近记录已经出现对应转移记录。
+根因或推测：CloudBase `rooms` watcher 在当前开发工具或权限配置下没有及时把房间文档变更推到所有客户端，导致只依赖 `rooms` 快照会出现公共积分池展示滞后。
+处理方式：保留 `rooms` watcher 作为主通道，同时在 `score_records` watcher 收到最新记录快照时，从最新带 `afterSnapshot.room.publicScore` 的记录中提取公共积分池当前值并局部更新页面 `room.publicScore`。
+是否需要新增自动检查或测试：需要人工在微信开发者工具中验证公共积分池转入、转出、批量转移和撤销后，所有在线客户端的公共积分池、成员排行和最近记录同步一致。
+```
+
+### 2026-06-24 房间监听建立后显示同步失败
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 / 多人同步 / CloudBase watch / 数据库权限
+结果：negative
+分值：-9
+严重度：5
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`startRoomWatchers`、watch 查询条件和错误提示
+- `cloudfunctions/scoreFunctions/index.js`：`createRoom`、`joinRoom`、`getRoom`
+- `docs/room-sync-plan.md`、`docs/architecture.md`、`docs/requirements.md`：同步机制和权限规则说明
+问题对应关系：
+- 两个测试号均已进入房间，但房间页显示“同步失败”：对应 CloudBase `watch()` 受集合读权限和安全规则查询子集限制影响。
+- 初始房间数据能显示，说明云函数 `getRoom` 可读；实时监听失败，说明客户端直连数据库读权限或监听查询条件不满足安全规则。
+现象：房间页能通过云函数加载成员和记录，但同步状态进入失败；不同客户端之间不能通过 `watch()` 及时收到成员加入和积分变化。
+根因或推测：此前 `rooms` 监听只按 `_id` 查询，无法配合 `auth.openid in doc.memberOpenids` 这类成员级安全规则；旧房间也缺少 `memberOpenids` 字段，导致安全规则无法判断当前用户是否属于房间。
+处理方式：新增并维护 `rooms.memberOpenids`；创建、加入和 `getRoom` 时由云函数写入或回填；房间页 `rooms` watcher 改为 `_id + memberOpenids` 查询；watch 失败时输出具体集合错误，并提示检查权限；文档补充推荐安全规则。
+是否需要新增自动检查或测试：需要人工在微信开发者工具中部署云函数并配置 CloudBase 安全规则后，用 A/B 两个测试号验证成员加入、记分、转移和关闭房间是否实时同步。
+```
+
+### 2026-06-24 小程序 UI 风格需要贴合黄鸭 icon
+
+```text
+日期：2026-06-24
+来源：human
+场景：首页 / 创建房间 / 加入房间 / 房间页 / 记录页 / UI 主题
+结果：positive
+分值：+4
+严重度：4
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/assets/app-icon.png`：黄鸭记分板 icon 风格参考
+- `docs/assets/ui-redesign/ui-redesign-effect.png`：本轮确认的视觉效果图
+- `miniprogram/assets/app-icon.png`：小程序运行时使用的 icon 资源
+- `miniprogram/app.wxss`、`miniprogram/app.json`：全局背景和导航色
+- `miniprogram/pages/index/index.*`：首页黄鸭品牌卡和三色入口
+- `miniprogram/pages/create-room/index.*`：创建页暖色表单主题
+- `miniprogram/pages/join-room/index.*`：加入页暖色表单主题
+- `miniprogram/pages/room/index.*`：房间页公共积分池、成员排行和记录卡主题
+- `miniprogram/pages/records/index.*`：记录页彩色记录卡主题
+问题对应关系：
+- 用户确认效果图风格符合 icon：对应后续 UI 改动应保持黄鸭、奶油黄、圆润卡片和绿/红/蓝功能色体系。
+- 需要把当前小程序 UI 改成效果图风格：对应只改视觉层，不改变云函数 action、数据结构、权限规则或积分流程。
+- 历史 UI 反馈多次涉及按钮居中、超界和标题挤压：对应本轮继续保留按钮 flex 居中、公共积分池纵向按钮结构、成员排行标题独占一行。
+现象：原页面偏通用工具风，和黄鸭 icon 的可爱、温暖、圆润风格不够一致。
+根因或推测：此前视觉系统主要以浅灰、白卡和绿色主按钮为主，只承接了 icon 的加分绿色，没有承接黄鸭品牌主色。
+处理方式：先输出并确认效果图；随后把小程序页面主题调整为奶油黄背景、黄鸭品牌元素、圆润卡片、黄色创建入口、绿色确认/加分、红色扣分、蓝色转移/信息。
+是否需要新增自动检查或测试：暂不新增自动化。需要微信开发者工具人工验证五个页面无缺失图片、按钮不溢出、文字不竖排、权限入口不被视觉改造误伤。
+```
+
+### 2026-06-24 首页默认名编辑流程执行方案 C
+
+```text
+日期：2026-06-24
+来源：human
+场景：首页 / 当前用户信息 / 默认名编辑
+结果：positive
+分值：+3
+严重度：3
+置信度：4
+影响模块：miniprogram / docs
+关联代码位置：
+- `docs/home-profile-ui-plan.md`：方案 C 执行计划和自查
+- `miniprogram/pages/index/index.js`：默认名草稿、保存、取消和校验状态
+- `miniprogram/pages/index/index.wxml`：身份胶囊和默认名编辑条
+- `miniprogram/pages/index/index.wxss`：身份胶囊、编辑条和状态样式
+- `miniprogram/pages/create-room/index.wxml`：默认名来源提示
+- `miniprogram/pages/join-room/index.wxml`：默认名来源提示
+问题对应关系：
+- 用户要求开始执行计划：对应按方案 C 实现身份胶囊和默认名编辑流程。
+- 名称修改逻辑需要明确触发和保存：对应点击名称或“改”进入编辑态，点击“保存”才写入本地缓存，点击“取消”丢弃草稿。
+- 创建和加入页需要说明默认名来源：对应昵称字段下方增加临时修改提示。
+现象：此前首页默认名在胶囊内输入即保存，触发、保存和取消状态不明确。
+根因或推测：初版只完成数据流，未按交互状态拆分默认名编辑流程。
+处理方式：新增 `profileEditing`、`profileDraftName`、`profileOriginalName`、`profileSaving`、`profileError` 状态；首页默认态展示身份胶囊，编辑态展开输入、取消和保存；创建/加入页提示默认名带入但不反写首页。
+是否需要新增自动检查或测试：当前通过语法和文案检查覆盖基础质量；仍需微信开发者工具真实预览确认身份胶囊、编辑条、长名称和按钮不溢出、不竖排。
+```
+
+### 2026-06-24 房间成员加入和积分变化改为 CloudBase watch 同步
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 / 多人同步 / 成员加入 / 积分变化
+结果：negative
+分值：-8
+严重度：5
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：继续作为唯一业务写入口，不再生成额外推送事件
+- `miniprogram/pages/room/index.js`：按房间建立 `rooms`、`room_members`、`score_records` 三个数据库 watcher
+- `miniprogram/pages/room/index.wxml`、`miniprogram/pages/room/index.wxss`：同步状态展示
+- `docs/room-sync-plan.md`、`docs/architecture.md`、`docs/requirements.md`：CloudBase 数据库监听方案和数据结构边界
+问题对应关系：
+- A 创建房间后停留在房间页，B 加入后 A 不会及时刷新：对应房间页此前只在 `onLoad`、下拉刷新和当前用户自己操作后调用 `loadRoom()`，没有被动同步机制。
+- 用户重新决策接受 CloudBase 数据库监听：对应同步边界改为按当前 `roomId` 监听三张核心业务表。
+- 多用户同时使用时不能无脑广播或整页重渲染：对应房间页只更新房间、成员、记录三个局部数据区。
+现象：其他成员加入、改名、记分、转移或关闭房间时，已在房间页的用户需要手动刷新才能看到变化。
+根因或推测：当前架构只有云函数写入和前端主动读取，缺少房间页被动同步。
+处理方式：撤销 WebSocket 推送服务接入点和 `room_events` 事件表；房间页初次 `getRoom` 后建立 `rooms`、`room_members`、`score_records` 三个 watcher；页面隐藏或卸载时关闭 watcher；监听异常时提示下拉刷新，不自动轮询。
+是否需要新增自动检查或测试：需要。当前已覆盖语法和文案检查；真实同步需在微信开发者工具或真机中用 A、B、C 三个用户人工验证 watcher 生效和关闭时机。
+```
+
+### 2026-06-24 首页用户区未先出图且布局失败
+
+```text
+日期：2026-06-24
+来源：human
+场景：首页 / 当前用户信息 / UI 方案确认
+结果：negative
+分值：-8
+严重度：5
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/index/index.wxml`：首页当前用户信息区
+- `miniprogram/pages/index/index.wxss`：`.profile-card`、`.avatar-button`、`.profile-sync-button`
+- `docs/codex-feedback-log.md`：本次 UI 流程反馈
+问题对应关系：
+- 首页用户区布局丑且真实预览错位：对应独立三列用户卡片在小屏宽度下挤压，授权按钮超出卡片，头像被拉成椭圆。
+- 用户要求先调查并生成几个样式图再定夺：对应 Codex 只给了文字方案描述，没有生成对应图片。
+- 随意直接落地 UI 导致减分：对应未先通过可视化方案确认。
+现象：真实微信开发者工具预览中，首页“当前用户”竖排，头像区域变形，“微信授权”按钮溢出白色卡片。
+根因或推测：对微信小程序按钮默认样式和窄屏横向空间预估不足；UI 决策没有按用户要求先输出图片方案。
+处理方式：用户选择方案 C 后，移除独立用户卡片，改为标题区右侧小身份胶囊；最多人数移到副标题旁；主操作卡片回到用户信息下方。
+是否需要新增自动检查或测试：暂不新增自动化。后续新增或大改 UI 前，应先生成可视化样式图供用户选择，并用微信开发者工具真实预览验收是否错位、溢出和文字竖排。
+```
+
+### 2026-06-24 首页需要展示当前用户和默认名
+
+```text
+日期：2026-06-24
+来源：human
+场景：首页 / 加入房间 / 成员昵称
+结果：negative
+分值：-4
+严重度：3
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/index/index.*`：当前用户信息、微信资料获取、默认名编辑
+- `miniprogram/utils/profile.js`：本地用户资料缓存
+- `miniprogram/pages/create-room/index.js`：创建房间默认昵称和头像传参
+- `miniprogram/pages/join-room/index.js`：加入房间默认昵称和头像传参
+- `docs/requirements.md`、`docs/architecture.md`：首页用户信息和默认名规则
+问题对应关系：
+- 首页不知道当前是哪个用户：对应首页缺少当前用户头像和名称展示。
+- 每个用户需要默认名：对应本地 `userProfile.defaultName` 缓存。
+- 加入房间应默认使用该名称：对应创建页和加入页初始化昵称并向云函数传递。
+现象：用户进入首页后无法确认当前身份，加入房间时需要重复输入昵称。
+根因或推测：此前昵称只存在创建/加入表单中，未沉淀为首页级本地用户偏好。
+处理方式：新增首页用户信息区和本地资料工具；创建和加入房间默认带入首页默认名，并传递头像字段。
+是否需要新增自动检查或测试：当前通过语法检查覆盖；需要微信开发者工具人工验证微信授权、头像选择、默认名编辑、创建和加入房间默认昵称。
+```
+
 ### 2026-06-24 编辑 icon 多次未命中后改为文字按钮
 
 ```text
