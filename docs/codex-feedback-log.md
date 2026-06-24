@@ -23,6 +23,106 @@
 
 ## 当前反馈
 
+### 2026-06-24 编辑 icon 多次未命中后改为文字按钮
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 UI / 成员昵称改名入口
+结果：negative
+分值：-9
+严重度：5
+置信度：5
+影响模块：miniprogram
+关联代码位置：
+- `miniprogram/pages/room/index.wxml`：`.name-edit-button`
+- `miniprogram/pages/room/index.wxss`：`.name-edit-button`
+问题对应关系：
+- icon 形式连续与效果图和真实预览不一致：对应此前用 CSS 绘制图标并依赖小程序渲染，位置和尺寸难以稳定命中。
+- 用户明确改为文字形式：对应昵称旁入口改成“改名”小文字按钮。
+现象：编辑 icon 的位置和大小多次偏离效果图 A，真实预览体验不达标。
+根因或推测：图标方案在当前小程序页面中对尺寸和位置要求高，且 Codex 未通过真实开发者工具截图闭环验证，导致连续误差。
+处理方式：取消图标方案，改为稳定的“改名”文字按钮，保留轻量胶囊样式和云函数一次性改名逻辑。
+是否需要新增自动检查或测试：暂不新增自动化。需要微信开发者工具人工确认文字按钮位置、大小和点击区域。
+```
+
+### 2026-06-24 编辑 icon 效果图与真实小程序渲染不一致
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间页 UI / 成员昵称改名入口
+结果：negative
+分值：-8
+严重度：5
+置信度：5
+影响模块：miniprogram
+关联代码位置：
+- `miniprogram/pages/room/index.wxml`：昵称旁编辑入口承载元素
+- `miniprogram/pages/room/index.wxss`：`.name-edit-icon`、`.edit-icon-core`、`.edit-icon-body`、`.edit-icon-point`
+问题对应关系：
+- 效果图 A 已明确 icon 应贴近昵称，但真实小程序中位置偏到成员卡片中部：对应继续使用原生 `button` 导致微信默认按钮布局行为影响真实渲染。
+- icon 左右出现异物：对应把一个完整编辑图标拆成多个 CSS 片段，片段在真实渲染中被拉散。
+- icon 大小与效果图不一致：对应没有按效果图 A 的视觉尺寸换算到 rpx。
+现象：真实预览里编辑 icon 不贴近 `pc` 昵称，位置和效果图 A 明显不一致，且首次修复后仍残留尺寸偏差。
+根因或推测：Codex 只按 Web 效果图推断，没有充分考虑微信小程序 `button` 默认样式和 WXML 真实渲染差异；用 CSS 片段模拟图标的方式稳定性不足。
+处理方式：编辑入口从 `button` 改为 `view` 点击区，避开原生按钮默认样式；图标改为一个集中定位的核心容器，视觉尺寸调整为接近效果图 A。
+是否需要新增自动检查或测试：暂不新增自动化。后续 UI 效果图落地到小程序时，必须优先使用和效果图一致的结构，并在微信开发者工具真实预览中核对位置和尺寸。
+```
+
+### 2026-06-24 房间 24 小时过期后仍需保留 7 天只读数据
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间进入 / 数据生命周期 / 过期只读查看
+结果：negative
+分值：-7
+严重度：5
+置信度：5
+影响模块：scoreFunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`createRoom` 写入 `purgeAt`，`cleanupExpiredRooms` 改按 7 天保留期清理
+- `miniprogram/pages/room/index.js`、`miniprogram/pages/room/index.wxml`：过期房间仍可展示云端返回的房间、成员和记录数据，写操作入口由 `room.status === 'active'` 控制
+- `docs/requirements.md`、`docs/architecture.md`、`docs/codex-workflow.md`：生命周期从“24 小时删除”调整为“24 小时只读、7 天删除”
+问题对应关系：
+- 房间最多存活 24 小时：对应 `expireAt`，超过后不能加入、记分、转移、撤销、关闭或改名。
+- 云端数据保存 7 天：对应新增 `purgeAt`，清理函数只删除超过 7 天保留期的数据。
+- 换手机也可以查看云端数据：对应房间详情始终从 `getRoom` 拉取云端 `rooms`、`room_members`、`score_records`，本地缓存只作为入口。
+现象：如果按上一版 `expireAt <= 当前时间` 物理删除，24 小时后用户无法再进入房间查看结果和记录，不符合“房间不可操作但数据仍可查看”的预期。
+根因或推测：此前把“房间存活期”和“数据保留期”合并成同一个 `expireAt`，缺少独立的物理清理时间字段。
+处理方式：新增 `purgeAt = 创建时间 + 7 天`；`expireAt` 继续控制 active 到 expired；`cleanupExpiredRooms` 优先按 `purgeAt` 清理，旧数据按 `expireAt + 6 天` 兼容；文档同步只读查看和 7 天保留规则。
+是否需要新增自动检查或测试：需要人工在微信开发者工具验证过期房间可进入查看但所有写操作入口不可用；可通过构造过期未到 `purgeAt` 的测试数据和超过 `purgeAt` 的测试数据分别验证。
+```
+
+### 2026-06-24 本地历史房间与云端清理不一致、成员需要一次改名机会
+
+```text
+日期：2026-06-24
+来源：human
+场景：房间进入 / 数据生命周期 / 成员昵称
+结果：negative
+分值：-6
+严重度：4
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `miniprogram/utils/api.js`：保留云函数错误码，便于区分云端房间不存在
+- `miniprogram/pages/room/index.js`：房间加载失败状态、成员改名入口和 `updateNickname` 调用
+- `miniprogram/pages/room/index.wxml`：本人昵称旁编辑 icon 按钮
+- `miniprogram/pages/room/index.wxss`：编辑 icon 和房间不可用状态样式
+- `cloudfunctions/scoreFunctions/index.js`：`updateNickname`、`room_members.nicknameEdited`
+- `docs/requirements.md`、`docs/architecture.md`：改名机会、本地缓存和清理边界说明
+问题对应关系：
+- 本地 `recentRooms` 可能和云数据库不一致：对应过期清理只删除云数据库，不清理小程序本地缓存；前端进入已清理房间时需要提示而不是假定房间仍存在。
+- 玩家进入后需要一次改名机会：对应 `room_members.nicknameEdited` 字段和云函数 `updateNickname` 校验。
+- 有改名机会时名字旁应显示编辑 icon：对应房间页成员卡片只在当前成员本人且未改名时显示 icon 按钮。
+现象：过期房间被云端清理后，本地历史入口仍可能保留；用户还需要在加入房间后修正一次自己的显示昵称。
+根因或推测：本地缓存和云数据库生命周期不同步是预期行为，但页面缺少针对云端房间不存在的状态；成员昵称此前只在创建或加入时设置，没有后续一次性修改能力。
+处理方式：新增 `updateNickname` action，成员只能修改自己昵称一次，房主改名同步 `ownerNickname`；房间页本人昵称旁显示纯 icon 编辑按钮；云端房间不存在时显示房间不可用状态，不删除本地最近房间缓存。
+是否需要新增自动检查或测试：当前通过 `node --check` 覆盖语法，通过人工在微信开发者工具验证 stale 最近房间入口、改名一次成功、第二次隐藏入口或后端拒绝。
+```
+
 ### 2026-06-24 扫码加入二维码和房间清理策略缺失
 
 ```text

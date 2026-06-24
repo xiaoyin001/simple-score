@@ -99,6 +99,8 @@ nickname
 4. 展示最近记录，包含操作类型、操作人、对象、分值、时间和撤销状态；房间页每页展示 5 条。
 5. 房主可执行单人加扣分、批量加扣分、积分转移、指定记录撤销和关闭房间。
 6. 普通成员可查看、分享，并发起受限积分转移：自己的积分转给他人或公共积分池、公共积分池转给自己。
+7. 当前成员仍有一次改名机会时，在本人昵称旁显示编辑 icon 按钮；改名通过云函数 `updateNickname` 完成，前端不直接写成员数据。
+8. 最近房间入口来自本地 `recentRooms` 缓存，可能指向已被云端清理的房间；房间不存在时只提示用户，不删除本地缓存。
 
 ### 3.5 记录页
 
@@ -133,6 +135,7 @@ login / getOpenId
 createRoom
 joinRoom
 getRoom
+updateNickname
 updateScore
 batchUpdateScore
 transferScore
@@ -160,6 +163,7 @@ status
 createdAt
 updatedAt
 expireAt
+purgeAt
 closedAt
 version
 ```
@@ -182,6 +186,7 @@ nickname
 avatarUrl
 score
 role
+nicknameEdited
 joinedAt
 updatedAt
 leftAt
@@ -226,9 +231,9 @@ createdAt
 
 1. 房间名称不能为空，最多 20 个字符。
 2. 人数上限为 2 到 12。
-3. 房间默认有效期和最长存活时间均为 24 小时。
-4. 已关闭或已过期房间不可继续修改积分。
-5. 超过 `expireAt` 的房间、成员和操作记录由 `cleanupExpiredRooms` 定时清理。
+3. 房间默认可操作有效期为 24 小时，`expireAt` 控制加入和写操作截止时间。
+4. 已关闭或已过期房间不可继续修改积分；过期但未清理的房间仍可只读查看房间信息、成员积分和操作记录。
+5. 云端房间数据默认保留 7 天，`purgeAt` 控制 `cleanupExpiredRooms` 的物理清理时间；清理范围只包含云数据库，不清理小程序本地 `recentRooms`。
 6. 同一用户重复加入同一房间时返回已有成员，不重复占用名额。
 
 ### 6.2 权限
@@ -237,6 +242,7 @@ createdAt
 2. 只有房主可以加扣分、批量记分、撤销操作和关闭房间。
 3. 普通成员只能将自己的积分转给其他成员或公共积分池，也只能从公共积分池转给自己。
 4. 权限判断全部在云函数中完成。
+5. 成员只能通过 `updateNickname` 修改自己的昵称一次；云函数以当前 openid 查找 active 成员并校验 `nicknameEdited`。
 
 ### 6.3 积分
 

@@ -66,10 +66,19 @@ tcb -e cloud1-d0g5o9l1ada4cc67e fn log scoreFunctions
 
 ## 部署云函数
 
-部署当前本地 `scoreFunctions` 到免费云环境：
+部署当前本地 `scoreFunctions` 到免费云环境时，先进入云函数目录再更新代码，确保上传包根目录包含 `index.js`：
 
 ```bash
-tcb -e cloud1-d0g5o9l1ada4cc67e fn deploy scoreFunctions --dir cloudfunctions/scoreFunctions --force
+cd cloudfunctions/scoreFunctions
+tcb -e cloud1-d0g5o9l1ada4cc67e fn code update scoreFunctions --deployMode cos
+cd ../..
+```
+
+Windows PowerShell 中如遇到 `tcb.ps1` 执行策略限制，可使用 `tcb.cmd`。交互确认时选择“使用当前配置更新”。部署后用以下命令确认 `$LATEST` 状态为“部署完成”，且 `updateNickname` 不再返回 `UNKNOWN_TYPE`：
+
+```bash
+tcb -e cloud1-d0g5o9l1ada4cc67e fn list-function-versions scoreFunctions
+tcb -e cloud1-d0g5o9l1ada4cc67e fn invoke scoreFunctions -d '{"type":"updateNickname"}'
 ```
 
 创建或更新过期房间清理触发器：
@@ -78,7 +87,7 @@ tcb -e cloud1-d0g5o9l1ada4cc67e fn deploy scoreFunctions --dir cloudfunctions/sc
 tcb -e cloud1-d0g5o9l1ada4cc67e fn trigger create scoreFunctions --trigger-name cleanupExpiredRooms --cron "0 0 * * * * *"
 ```
 
-触发器每小时执行一次，云函数会删除 `expireAt <= 当前时间` 的房间、成员和操作记录。手动触发清理可调用：
+触发器每小时执行一次，云函数会删除超过 `purgeAt` 保留期的房间、成员和操作记录；超过 `expireAt` 但未到 `purgeAt` 的房间仍可只读查看。手动触发清理可调用：
 
 ```bash
 tcb -e cloud1-d0g5o9l1ada4cc67e fn invoke scoreFunctions -d '{"type":"cleanupExpiredRooms","limit":50}'

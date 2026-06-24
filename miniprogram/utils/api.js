@@ -1,7 +1,11 @@
 // 统一校验后端返回结构，失败时转成页面可展示的 Error。
 function normalizeResult(result) {
   if (!result || !result.success) {
-    throw new Error((result && result.message) || "操作失败");
+    const error = new Error((result && result.message) || "操作失败");
+    if (result && result.code) {
+      error.code = result.code;
+    }
+    throw error;
   }
   return result;
 }

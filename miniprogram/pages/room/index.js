@@ -231,6 +231,9 @@ Page({
     roomId: "",
     // 页面加载状态。
     loading: true,
+    // 房间云端数据不可用时的提示状态，本地最近房间缓存不在这里清理。
+    loadFailed: false,
+    loadErrorText: "",
     // 操作提交状态，防止重复点击。
     submitting: false,
     // 房间详情数据。
@@ -311,13 +314,18 @@ Page({
     this.setData({ loading: true });
     return callScoreFunction("getRoom", { roomId: this.data.roomId })
       .then((result) => {
-        const members = (result.members || []).map((member) => ({
-          ...member,
-          scoreTone: getScoreTone(member.score || 0),
-        }));
         const isOwner = result.currentUserRole === "owner";
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
+        const members = (result.members || []).map((member) => ({
+          ...member,
+          scoreTone: getScoreTone(member.score || 0),
+          canRename:
+            member._id === currentMemberId &&
+            !member.nicknameEdited &&
+            result.room &&
+            result.room.status === "active",
+        }));
         const formattedRecords = (result.recentRecords || []).map((record) =>
           formatRecord(record, currentMemberId)
         );
@@ -338,6 +346,8 @@ Page({
           transferTargetSummary: "未选择目标",
           transferTargetCount: 0,
           loading: false,
+          loadFailed: false,
+          loadErrorText: "",
         });
         saveRecentRoom({
           roomId: result.room._id,
@@ -346,9 +356,24 @@ Page({
         });
       })
       .catch((error) => {
-        this.setData({ loading: false });
-        showError(error);
+        const isRoomMissing = error.code === "ROOM_NOT_FOUND";
+        this.setData({
+          loading: false,
+          loadFailed: true,
+          loadErrorText: isRoomMissing
+            ? "云端房间可能已过期并被清理，本地历史入口会保留。"
+            : error.message || "房间加载失败",
+        });
+        if (!isRoomMissing) {
+          showError(error);
+        }
       });
+  },
+
+  goHome() {
+    wx.redirectTo({
+      url: "/pages/index/index",
+    });
   },
 
   // 切换房间页最近记录分页。
@@ -389,6 +414,60 @@ Page({
     this.setData({
       roomQrVisible: false,
     });
+  },
+
+  promptNickname(currentName) {
+    return new Promise((resolve, reject) => {
+      wx.showModal({
+        title: "修改昵称",
+        editable: true,
+        placeholderText: "请输入 1 到 20 个字符",
+        content: currentName || "",
+        confirmText: "保存",
+        success: (res) => {
+          if (!res.confirm) {
+            reject(new Error("已取消"));
+            return;
+          }
+          const nickname = String(res.content || "").trim();
+          if (!nickname) {
+            reject(new Error("昵称不能为空"));
+            return;
+          }
+          if (nickname.length > 20) {
+            reject(new Error("昵称最多 20 个字符"));
+            return;
+          }
+          resolve(nickname);
+        },
+        fail: reject,
+      });
+    });
+  },
+
+  updateNickname(event) {
+    if (this.data.submitting) return;
+    const { nickname } = event.currentTarget.dataset;
+    this.promptNickname(nickname)
+      .then((nextNickname) => {
+        this.setData({ submitting: true });
+        wx.showLoading({ title: "保存中" });
+        return callScoreFunction("updateNickname", {
+          roomId: this.data.roomId,
+          nickname: nextNickname,
+        });
+      })
+      .then(() => {
+        wx.showToast({ title: "已修改", icon: "success" });
+        return this.loadRoom();
+      })
+      .catch((error) => {
+        if (error.message !== "已取消") showError(error);
+      })
+      .finally(() => {
+        wx.hideLoading();
+        this.setData({ submitting: false });
+      });
   },
 
   // 弹出分值输入框，并校验 1 到 9999 的整数。

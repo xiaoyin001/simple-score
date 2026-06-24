@@ -11,7 +11,7 @@ const _ = db.command;
  * 房间集合字段：
  * roomCode 房间码；name 房间名称；ownerOpenid 房主标识；ownerNickname 房主昵称；
  * memberLimit 成员上限；publicScore 公共积分；status 房间状态；
- * createdAt/updatedAt/expireAt/closedAt 生命周期时间；version 数据版本。
+ * createdAt/updatedAt/expireAt/purgeAt/closedAt 生命周期时间；version 数据版本。
  */
 /**
  * 成员集合字段：
@@ -94,7 +94,11 @@ const UNDOABLE_TYPES = [
   RECORD_TYPE.BATCH_TRANSFER,
 ];
 
-// 单次清理过期房间的最大数量，避免定时任务一次处理过多数据。
+const ACTIVE_ROOM_DURATION_MS = 24 * 60 * 60 * 1000;
+const ROOM_DATA_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const LEGACY_EXPIRE_TO_PURGE_MS = ROOM_DATA_RETENTION_MS - ACTIVE_ROOM_DURATION_MS;
+
+// 单次清理超过保留期房间的最大数量，避免定时任务一次处理过多数据。
 const MAX_CLEANUP_LIMIT = 100;
 
 // 统一成功响应结构，前端依赖 success 字段判断调用结果。
@@ -265,7 +269,8 @@ async function createRoom(event) {
 
   try {
     const createdAt = now();
-    const expireAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    const expireAt = new Date(createdAt.getTime() + ACTIVE_ROOM_DURATION_MS);
+    const purgeAt = new Date(createdAt.getTime() + ROOM_DATA_RETENTION_MS);
     const roomCode = await generateRoomCode();
     const roomResult = await db.collection("rooms").add({
       data: {
@@ -279,6 +284,7 @@ async function createRoom(event) {
         createdAt,
         updatedAt: createdAt,
         expireAt,
+        purgeAt,
         closedAt: null,
         version: 1,
       },
@@ -296,6 +302,7 @@ async function createRoom(event) {
         joinedAt: createdAt,
         updatedAt: createdAt,
         leftAt: null,
+        nicknameEdited: false,
         status: MEMBER_STATUS.ACTIVE,
       },
     });
@@ -391,6 +398,7 @@ async function joinRoom(event) {
       joinedAt,
       updatedAt: joinedAt,
       leftAt: null,
+      nicknameEdited: false,
       status: MEMBER_STATUS.ACTIVE,
     },
   });
@@ -473,6 +481,69 @@ async function getRoom(event) {
     currentUserRole,
     currentMember,
   });
+}
+
+async function updateNickname(event) {
+  await ensureCollections();
+
+  const wxContext = getWxContext();
+  const roomId = normalizeText(event.roomId);
+  const nickname = normalizeText(event.nickname);
+
+  if (!roomId) return fail("缺少房间 ID");
+  if (!nickname) return fail("昵称不能为空");
+  if (nickname.length > 20) return fail("昵称最多 20 个字符");
+
+  try {
+    const { room, currentMember } = await getActiveRoomForParticipant(
+      roomId,
+      wxContext.OPENID
+    );
+    if (!currentMember) throw new Error("请先加入房间");
+    if (currentMember.nicknameEdited) throw new Error("改名机会已使用");
+
+    await db.runTransaction(async (transaction) => {
+      const memberResult = await transaction
+        .collection("room_members")
+        .doc(currentMember._id)
+        .get();
+      const member = memberResult.data;
+      if (
+        !member ||
+        member.roomId !== roomId ||
+        member.openid !== wxContext.OPENID ||
+        member.status !== MEMBER_STATUS.ACTIVE
+      ) {
+        throw new Error("请先加入房间");
+      }
+      if (member.nicknameEdited) throw new Error("改名机会已使用");
+
+      const updatedAt = now();
+      await transaction.collection("room_members").doc(currentMember._id).update({
+        data: {
+          nickname,
+          nicknameEdited: true,
+          updatedAt,
+        },
+      });
+
+      const roomUpdate = { updatedAt };
+      if (member.role === MEMBER_ROLE.OWNER || room.ownerOpenid === wxContext.OPENID) {
+        roomUpdate.ownerNickname = nickname;
+      }
+      await transaction.collection("rooms").doc(roomId).update({
+        data: roomUpdate,
+      });
+    });
+
+    return success({
+      memberId: currentMember._id,
+      nickname,
+      nicknameEdited: true,
+    });
+  } catch (error) {
+    return fail(error.message || "修改昵称失败");
+  }
 }
 
 // 获取可操作房间并校验房主权限。
@@ -1327,7 +1398,7 @@ async function removeByRoomId(collectionName, roomId) {
   return removedTotal;
 }
 
-// 清理超过最长存活时间的房间及其成员、记录。
+// 清理超过数据保留期的房间及其成员、记录；24 小时过期但未满 7 天的房间仍可只读查看。
 async function cleanupExpiredRooms(event = {}) {
   await ensureCollections();
 
@@ -1337,19 +1408,43 @@ async function cleanupExpiredRooms(event = {}) {
     MAX_CLEANUP_LIMIT
   );
   const cutoff = now();
-  const expiredRooms = await db
+  const legacyCutoff = new Date(cutoff.getTime() - LEGACY_EXPIRE_TO_PURGE_MS);
+  const purgeRoomsResult = await db
     .collection("rooms")
     .where({
-      expireAt: _.lte(cutoff),
+      purgeAt: _.lte(cutoff),
     })
     .limit(limit)
     .get();
+  const roomMap = {};
+  (purgeRoomsResult.data || []).forEach((room) => {
+    roomMap[room._id] = room;
+  });
+
+  if (Object.keys(roomMap).length < limit) {
+    const legacyRoomsResult = await db
+      .collection("rooms")
+      .where({
+        expireAt: _.lte(legacyCutoff),
+      })
+      .limit(limit)
+      .get();
+    (legacyRoomsResult.data || []).forEach((room) => {
+      if (!room.purgeAt) {
+        roomMap[room._id] = room;
+      }
+    });
+  }
+
+  const roomsToRemove = Object.keys(roomMap)
+    .slice(0, limit)
+    .map((roomId) => roomMap[roomId]);
 
   let roomsRemoved = 0;
   let membersRemoved = 0;
   let recordsRemoved = 0;
 
-  for (const room of expiredRooms.data || []) {
+  for (const room of roomsToRemove) {
     const roomId = room._id;
     recordsRemoved += await removeByRoomId("score_records", roomId);
     membersRemoved += await removeByRoomId("room_members", roomId);
@@ -1362,7 +1457,7 @@ async function cleanupExpiredRooms(event = {}) {
   }
 
   return success({
-    scanned: expiredRooms.data.length,
+    scanned: roomsToRemove.length,
     roomsRemoved,
     membersRemoved,
     recordsRemoved,
@@ -1387,6 +1482,8 @@ exports.main = async (event = {}) => {
       return joinRoom(event);
     case "getRoom":
       return getRoom(event);
+    case "updateNickname":
+      return updateNickname(event);
     case "updateScore":
       return updateScore(event);
     case "batchUpdateScore":

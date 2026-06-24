@@ -61,7 +61,19 @@
           </label>
           <view class="rank">{{index + 1}}</view>
           <view class="member-main">
-            <view class="member-name">{{item.nickname}}</view>
+            <view class="member-name-row">
+              <view class="member-name">{{item.nickname}}</view>
+              <view
+                wx:if="{{item.canRename}}"
+                class="name-edit-button"
+                aria-label="修改昵称"
+                role="button"
+                data-nickname="{{item.nickname}}"
+                bindtap="updateNickname"
+              >
+                改名
+              </view>
+            </view>
             <view class="member-role">{{item.role === 'owner' ? '房主' : '成员'}}</view>
           </view>
           <view class="member-score {{item.scoreTone}}">{{item.score}}</view>
@@ -212,6 +224,12 @@
   <view class="footer-actions" wx:if="{{isOwner && room.status === 'active'}}">
     <button class="footer-button danger" bindtap="closeRoom">关闭房间</button>
   </view>
+</view>
+
+<view class="empty-state" wx:elif="{{!loading && loadFailed}}">
+  <view class="empty-title">房间不可用</view>
+  <view class="empty-desc">{{loadErrorText}}</view>
+  <button class="empty-button" bindtap="goHome">返回首页</button>
 </view>
 
 <view class="loading" wx:else>加载中...</view>
