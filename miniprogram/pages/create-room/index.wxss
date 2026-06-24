@@ -1,5 +1,7 @@
 page {
-  background: #f4f5f7;
+  background:
+    linear-gradient(180deg, rgba(255, 225, 86, 0.42), rgba(255, 253, 247, 0.94) 360rpx),
+    #fffdf7;
 }
 
 .page {
@@ -8,24 +10,42 @@ page {
   box-sizing: border-box;
 }
 
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22rpx;
+}
+
+.head-icon {
+  flex-shrink: 0;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
+  box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.14);
+}
+
 .title {
-  color: #111827;
+  color: #3b260f;
   font-size: 42rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .subtitle {
   margin-top: 12rpx;
-  color: #6b7280;
+  color: #765839;
   font-size: 26rpx;
+  font-weight: 600;
   line-height: 1.6;
 }
 
 .form {
   margin-top: 34rpx;
   padding: 28rpx;
-  border-radius: 16rpx;
-  background: #ffffff;
+  border: 2rpx solid rgba(90, 52, 24, 0.08);
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 14rpx 30rpx rgba(111, 74, 28, 0.08);
 }
 
 .field {
@@ -48,25 +68,38 @@ page {
 
 .label {
   margin-bottom: 12rpx;
-  color: #374151;
+  color: #6a4d2e;
   font-size: 26rpx;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .input {
   height: 84rpx;
   padding: 0 22rpx;
-  border-radius: 12rpx;
-  background: #f7f8fa;
-  color: #111827;
+  border: 2rpx solid rgba(90, 52, 24, 0.08);
+  border-radius: 20rpx;
+  background: #fff8dd;
+  color: #3b260f;
   font-size: 30rpx;
+  font-weight: 700;
   box-sizing: border-box;
 }
 
 .hint {
   margin-top: 10rpx;
-  color: #8b95a1;
+  color: #8a7358;
   font-size: 22rpx;
+}
+
+.tip-card {
+  margin-top: 24rpx;
+  padding: 24rpx;
+  border-radius: 26rpx;
+  background: #eaf8f0;
+  color: #32714e;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .submit {
@@ -78,9 +111,11 @@ page {
   margin-left: 0;
   margin-right: 0;
   height: 92rpx;
-  border-radius: 12rpx;
-  background: #1f7a5a;
-  color: #ffffff;
+  border-radius: 22rpx;
+  background: #ffd93d;
+  color: #55340f;
   font-size: 30rpx;
+  font-weight: 800;
   line-height: 1;
+  box-shadow: inset 0 -5rpx rgba(90, 52, 24, 0.12);
 }

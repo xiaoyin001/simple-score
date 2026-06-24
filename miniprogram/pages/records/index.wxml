@@ -1,8 +1,16 @@
 <view class="page" wx:if="{{!loading}}">
-  <view class="title">{{room.name || '操作记录'}}</view>
-  <view class="subtitle">最近 50 条房间记录</view>
+  <view class="page-head">
+    <view>
+      <view class="title">{{room.name || '操作记录'}}</view>
+      <view class="subtitle">最近 50 条房间记录</view>
+    </view>
+    <view class="record-badge" wx:if="{{isOwner}}">可撤销</view>
+  </view>
 
-  <view class="empty" wx:if="{{!records.length}}">暂无记录</view>
+  <view class="empty" wx:if="{{!records.length}}">
+    <image class="empty-icon" src="/assets/app-icon.png" mode="aspectFit" />
+    <view>暂无记录</view>
+  </view>
   <view class="record-card {{item.toneClass}}" wx:for="{{records}}" wx:key="_id">
     <view class="record-head">
       <view class="record-type">{{item.displayType}}</view>
@@ -22,6 +30,10 @@
     >
       撤销这条记录
     </button>
+  </view>
+  <view class="records-footer" wx:if="{{records.length}}">
+    <image class="footer-icon" src="/assets/app-icon.png" mode="aspectFit" />
+    <view class="footer-text">每次变化都有记录，方便活动结束后复盘。</view>
   </view>
 </view>
 

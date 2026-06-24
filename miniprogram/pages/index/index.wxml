@@ -1,10 +1,73 @@
 <view class="page">
   <view class="hero">
-    <view>
+    <view class="hero-copy">
       <view class="app-name">简单记分鸭</view>
-      <view class="tagline">多人活动记分工具</view>
+      <view class="tagline-row">
+        <view class="tagline">多人活动记分工具</view>
+        <view class="badge">最多 12 人</view>
+      </view>
     </view>
-    <view class="badge">最多 12 人</view>
+    <view class="profile-capsule">
+      <button class="capsule-avatar" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image
+          wx:if="{{userProfile.avatarUrl}}"
+          class="capsule-avatar-image"
+          src="{{userProfile.avatarUrl}}"
+          mode="aspectFill"
+        />
+        <view wx:else class="capsule-avatar-placeholder">{{avatarInitial}}</view>
+      </button>
+      <view class="capsule-name" bindtap="startProfileEdit">{{profileDisplayName}}</view>
+      <view wx:if="{{profileAuthed}}" class="capsule-check">✓</view>
+      <view wx:else class="capsule-auth" bindtap="getWechatProfile">授权</view>
+      <view class="capsule-edit" bindtap="startProfileEdit">改</view>
+    </view>
+  </view>
+
+  <view class="profile-editor" wx:if="{{profileEditing}}">
+    <view class="profile-editor-row">
+      <view class="editor-avatar">
+        <image
+          wx:if="{{userProfile.avatarUrl}}"
+          class="editor-avatar-image"
+          src="{{userProfile.avatarUrl}}"
+          mode="aspectFill"
+        />
+        <view wx:else class="editor-avatar-placeholder">{{avatarInitial}}</view>
+      </view>
+      <input
+        class="editor-input"
+        type="nickname"
+        maxlength="20"
+        focus="{{profileEditing}}"
+        disabled="{{profileSaving}}"
+        placeholder="请输入默认名"
+        value="{{profileDraftName}}"
+        bindinput="onProfileDraftInput"
+      />
+      <button class="editor-cancel" disabled="{{profileSaving}}" bindtap="cancelProfileEdit">
+        取消
+      </button>
+      <button
+        class="editor-save"
+        loading="{{profileSaving}}"
+        disabled="{{profileSaving || !profileDraftName}}"
+        bindtap="saveProfileName"
+      >
+        {{profileSaving ? '保存中' : '保存'}}
+      </button>
+    </view>
+    <view class="profile-editor-hint {{profileError ? 'error' : ''}}">
+      {{profileError || '加入房间时默认使用这个名称'}}
+    </view>
+  </view>
+
+  <view class="mascot-card">
+    <image class="mascot-image" src="/assets/app-icon.png" mode="aspectFit" />
+    <view class="mascot-copy">
+      <view class="mascot-badge">最多 12 人</view>
+      <view class="mascot-text">创建房间，邀请成员，轻松记录每次积分变化。</view>
+    </view>
   </view>
 
   <view class="action-panel">

@@ -13,10 +13,10 @@ button::after{
 
 
 page {
-  background: #f6f6f6;
+  background: #fff8e6;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  color: #111827;
+  color: #3b260f;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }

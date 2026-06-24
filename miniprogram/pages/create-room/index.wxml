@@ -1,6 +1,11 @@
 <view class="page">
-  <view class="title">创建记分房间</view>
-  <view class="subtitle">房间有效期默认 24 小时，成员初始积分为 0。</view>
+  <view class="page-head">
+    <view>
+      <view class="title">创建记分房间</view>
+      <view class="subtitle">房间有效期默认 24 小时，成员初始积分为 0。</view>
+    </view>
+    <image class="head-icon" src="/assets/app-icon.png" mode="aspectFit" />
+  </view>
 
   <view class="form">
     <view class="field">
@@ -25,6 +30,7 @@
         data-field="nickname"
         bindinput="onInput"
       />
+      <view class="hint">来自首页默认名，可临时修改</view>
     </view>
 
     <view class="field-row">
@@ -52,6 +58,8 @@
       </view>
     </view>
   </view>
+
+  <view class="tip-card">创建成功后会自动进入房间，可直接分享给成员加入。</view>
 
   <button class="submit" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submit">
     创建并进入

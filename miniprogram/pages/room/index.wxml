@@ -3,6 +3,7 @@
     <view>
       <view class="room-name">{{room.name}}</view>
       <view class="room-meta">房间码 {{room.roomCode}} · {{members.length}}/{{room.memberLimit}} 人</view>
+      <view wx:if="{{showSyncStatus}}" class="sync-status {{syncStatusClass}}">{{syncStatusText}}</view>
     </view>
     <view class="room-header-actions">
       <button class="copy-button" bindtap="copyRoomCode">复制</button>
@@ -20,6 +21,7 @@
         <view class="panel-label">公共积分池</view>
         <view class="public-score">{{room.publicScore}}</view>
       </view>
+      <image class="score-panel-icon" src="/assets/app-icon.png" mode="aspectFit" />
     </view>
     <view class="score-panel-actions">
       <view class="public-transfer-row" wx:if="{{canTransfer && room.status === 'active'}}">
@@ -45,7 +47,7 @@
           class="text-button batch-toggle {{batchMode ? 'active' : ''}}"
           bindtap="toggleBatchMode"
         >
-          {{batchMode ? '取消批量' : '批量'}}
+          {{batchMode ? '取消批量' : '批量加扣'}}
         </button>
       </view>
     </view>
@@ -66,8 +68,6 @@
               <view
                 wx:if="{{item.canRename}}"
                 class="name-edit-button"
-                aria-label="修改昵称"
-                role="button"
                 data-nickname="{{item.nickname}}"
                 bindtap="updateNickname"
               >
@@ -154,14 +154,12 @@
           class="qr-row"
           wx:for="{{roomQrRows}}"
           wx:for-item="row"
-          wx:for-index="rowIndex"
-          wx:key="rowIndex"
+          wx:key="key"
         >
           <view
-            wx:for="{{row}}"
+            wx:for="{{row.cells}}"
             wx:for-item="cell"
-            wx:for-index="cellIndex"
-            wx:key="cellIndex"
+            wx:key="key"
             class="qr-cell {{cell.dark ? 'dark' : ''}}"
           ></view>
         </view>

@@ -1,5 +1,7 @@
 page {
-  background: #f4f5f7;
+  background:
+    linear-gradient(180deg, rgba(255, 225, 86, 0.42), rgba(255, 253, 247, 0.94) 360rpx),
+    #fffdf7;
 }
 
 .page {
@@ -8,48 +10,82 @@ page {
   box-sizing: border-box;
 }
 
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
 .title {
-  color: #111827;
+  color: #3b260f;
   font-size: 38rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .subtitle {
   margin-top: 10rpx;
-  color: #6b7280;
+  color: #765839;
   font-size: 24rpx;
+  font-weight: 600;
+}
+
+.record-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  background: #fff2b0;
+  color: #7a5016;
+  font-size: 22rpx;
+  font-weight: 800;
 }
 
 .empty,
 .loading {
   margin-top: 40rpx;
   padding: 36rpx;
-  border-radius: 14rpx;
-  background: #ffffff;
-  color: #8b95a1;
+  border: 2rpx solid rgba(90, 52, 24, 0.08);
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.88);
+  color: #8a7358;
   font-size: 26rpx;
+  font-weight: 700;
   text-align: center;
+}
+
+.empty-icon {
+  display: block;
+  width: 116rpx;
+  height: 116rpx;
+  margin: 0 auto 18rpx;
+  border-radius: 30rpx;
 }
 
 .record-card {
   margin-top: 18rpx;
   padding: 24rpx;
-  border-radius: 14rpx;
-  background: #ffffff;
+  border: 2rpx solid rgba(90, 52, 24, 0.08);
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, 0.88);
   border-left: 8rpx solid transparent;
   box-sizing: border-box;
+  box-shadow: 0 10rpx 22rpx rgba(111, 74, 28, 0.06);
 }
 
 .record-card.record-positive {
-  border-left-color: #1f9d63;
+  border-left-color: #47c982;
 }
 
 .record-card.record-negative {
-  border-left-color: #d64532;
+  border-left-color: #ff6b62;
 }
 
 .record-card.record-transfer {
-  border-left-color: #2f80c4;
+  border-left-color: #56a8f5;
 }
 
 .record-card.record-undo {
@@ -64,28 +100,28 @@ page {
 }
 
 .record-type {
-  color: #111827;
+  color: #3b260f;
   font-size: 28rpx;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .record-time {
   flex-shrink: 0;
   margin-left: 18rpx;
-  color: #8b95a1;
+  color: #8a7358;
   font-size: 22rpx;
 }
 
 .record-line,
 .record-remark {
   margin-top: 8rpx;
-  color: #4b5563;
+  color: #6a4d2e;
   font-size: 24rpx;
   line-height: 1.5;
 }
 
 .record-remark {
-  color: #6b7280;
+  color: #8a7358;
 }
 
 .record-amount {
@@ -93,20 +129,20 @@ page {
 }
 
 .record-amount.record-positive {
-  color: #12824f;
+  color: #238456;
 }
 
 .record-amount.record-negative {
-  color: #c2412d;
+  color: #d34a3f;
 }
 
 .record-amount.record-transfer {
-  color: #2f80c4;
+  color: #2672ae;
 }
 
 .record-amount.record-undo,
 .record-amount.record-neutral {
-  color: #6b7280;
+  color: #8a7358;
 }
 
 .undone {
@@ -123,11 +159,35 @@ page {
   padding: 0 22rpx;
   width: 100%;
   height: 62rpx;
-  border-radius: 12rpx;
-  background: #fff7ed;
-  color: #b45309;
+  border-radius: 18rpx;
+  background: #fff2b0;
+  color: #704812;
   font-size: 24rpx;
   font-weight: 700;
   line-height: 1;
   box-sizing: border-box;
+}
+
+.records-footer {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-top: 28rpx;
+  padding: 22rpx;
+  border-radius: 28rpx;
+  background: #fff8dd;
+  color: #6a4d2e;
+}
+
+.footer-icon {
+  flex-shrink: 0;
+  width: 86rpx;
+  height: 86rpx;
+  border-radius: 24rpx;
+}
+
+.footer-text {
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1.45;
 }
