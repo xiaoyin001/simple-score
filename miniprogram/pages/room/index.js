@@ -49,6 +49,16 @@ const UNDOABLE_RECORD_TYPES = [
 ];
 const RECENT_RECORD_PAGE_SIZE = 5;
 
+function buildQrViewRows(roomCode) {
+  return buildQrRows(roomCode).map((row, rowIndex) => ({
+    key: `row-${rowIndex}`,
+    cells: row.map((cell, cellIndex) => ({
+      key: `cell-${rowIndex}-${cellIndex}`,
+      dark: !!cell.dark,
+    })),
+  }));
+}
+
 // 将记录时间格式化为房间页使用的短时间。
 function formatTime(value) {
   if (!value) return "";
@@ -220,6 +230,53 @@ function buildRecentRecordPageState(records, page) {
   };
 }
 
+function normalizeMemberForView(member, currentMemberId, room) {
+  return {
+    ...member,
+    scoreTone: getScoreTone(member.score || 0),
+    canRename:
+      member._id === currentMemberId &&
+      !member.nicknameEdited &&
+      room &&
+      room.status === "active",
+  };
+}
+
+function sortMembersForView(members) {
+  return [...members].sort((a, b) => {
+    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+    return new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime();
+  });
+}
+
+function getTimeValue(value) {
+  if (!value) return 0;
+  if (typeof value.getTime === "function") return value.getTime();
+  if (value instanceof Date) return value.getTime();
+  return new Date(value).getTime() || 0;
+}
+
+function sortRecordsForView(records) {
+  return [...(records || [])]
+    .sort((a, b) => getTimeValue(b.createdAt) - getTimeValue(a.createdAt))
+    .slice(0, 50);
+}
+
+function getRecordPublicScore(record) {
+  const roomSnapshot = record && record.afterSnapshot && record.afterSnapshot.room;
+  if (!roomSnapshot || roomSnapshot.publicScore === undefined) return null;
+  const publicScore = Number(roomSnapshot.publicScore);
+  return Number.isFinite(publicScore) ? publicScore : null;
+}
+
+function getLatestPublicScoreFromRecords(records) {
+  for (let index = 0; index < records.length; index += 1) {
+    const publicScore = getRecordPublicScore(records[index]);
+    if (publicScore !== null) return publicScore;
+  }
+  return null;
+}
+
 function buildTransferTargetSummary(targets) {
   if (!targets.length) return "未选择目标";
   return targets.map((target) => target.label).join("、");
@@ -238,6 +295,10 @@ Page({
     submitting: false,
     // 房间详情数据。
     room: null,
+    // 房间数据库监听状态。
+    syncStatusText: "",
+    syncStatusClass: "",
+    showSyncStatus: false,
     // 当前活跃成员列表。
     members: [],
     // 最近操作记录完整列表，用于房间页分页。
@@ -305,6 +366,147 @@ Page({
     this.loadRoom().finally(() => wx.stopPullDownRefresh());
   },
 
+  onShow() {
+    if (this.data.room) this.startRoomWatchers();
+  },
+
+  onHide() {
+    this.stopRoomWatchers();
+  },
+
+  onUnload() {
+    this.stopRoomWatchers();
+  },
+
+  updateSyncStatus(status) {
+    const statusMap = {
+      connecting: { text: "同步中", className: "sync-pending" },
+      connected: { text: "已同步", className: "sync-ok" },
+      error: { text: "同步失败，请检查权限", className: "sync-error" },
+      closed: { text: "", className: "" },
+    };
+    const next = statusMap[status] || statusMap.error;
+    this.setData({
+      syncStatusText: next.text,
+      syncStatusClass: next.className,
+      showSyncStatus: !!next.text,
+    });
+  },
+
+  startRoomWatchers() {
+    if (this.roomWatchers || !this.data.roomId) return;
+    const db = wx.cloud.database();
+    const _ = db.command;
+    const roomId = this.data.roomId;
+    const onError = (source) => (error) => {
+      console.error(`[room-sync] ${source} watch failed`, error);
+      this.updateSyncStatus("error");
+      this.stopRoomWatchers({ keepStatus: true });
+    };
+
+    this.updateSyncStatus("connecting");
+    const watchers = [];
+    try {
+      watchers.push(
+        db
+          .collection("rooms")
+          .where({
+            _id: roomId,
+            memberOpenids: _.in(["{openid}"]),
+          })
+          .watch({
+            onChange: (snapshot) => this.applyRoomSnapshot(snapshot),
+            onError: onError("rooms"),
+          })
+      );
+      watchers.push(
+        db
+          .collection("room_members")
+          .where({ roomId, status: "active" })
+          .watch({
+            onChange: (snapshot) => this.applyMembersSnapshot(snapshot),
+            onError: onError("room_members"),
+          })
+      );
+      watchers.push(
+        db
+          .collection("score_records")
+          .where({ roomId })
+          .watch({
+            onChange: (snapshot) => this.applyRecordsSnapshot(snapshot),
+            onError: onError("score_records"),
+          })
+      );
+      this.roomWatchers = watchers;
+    } catch (error) {
+      watchers.forEach((watcher) => {
+        if (watcher && typeof watcher.close === "function") watcher.close();
+      });
+      onError("setup")(error);
+    }
+  },
+
+  stopRoomWatchers(options = {}) {
+    if (!this.roomWatchers) return;
+    this.roomWatchers.forEach((watcher) => {
+      if (watcher && typeof watcher.close === "function") watcher.close();
+    });
+    this.roomWatchers = null;
+    if (!options.keepStatus) this.updateSyncStatus("closed");
+  },
+
+  applyRoomSnapshot(snapshot) {
+    const room = (snapshot.docs || [])[0];
+    if (!room || room._id !== this.data.roomId) {
+      this.updateSyncStatus("error");
+      return;
+    }
+    this.setData({
+      room,
+    });
+    this.updateSyncStatus("connected");
+  },
+
+  applyMembersSnapshot(snapshot) {
+    const docs = snapshot.docs || [];
+    if (!docs.length && this.data.currentMemberId) {
+      this.updateSyncStatus("error");
+      return;
+    }
+    const members = sortMembersForView(
+      docs.map((member) =>
+        normalizeMemberForView(member, this.data.currentMemberId, this.data.room)
+      )
+    );
+    this.setData({ members });
+    this.updateSyncStatus("connected");
+  },
+
+  applyRecordsSnapshot(snapshot) {
+    const docs = snapshot.docs || [];
+    if (!docs.length && this.data.allRecentRecords.length) {
+      this.updateSyncStatus("error");
+      return;
+    }
+    const sortedRecords = sortRecordsForView(docs);
+    const formattedRecords = sortedRecords.map((record) =>
+      formatRecord(record, this.data.currentMemberId)
+    );
+    const nextData = buildRecentRecordPageState(
+      formattedRecords,
+      this.data.recentRecordPage
+    );
+    const latestPublicScore = getLatestPublicScoreFromRecords(sortedRecords);
+    if (latestPublicScore !== null && this.data.room) {
+      nextData.room = {
+        ...this.data.room,
+        publicScore: latestPublicScore,
+      };
+    }
+    this.setData(nextData);
+    this.updateSyncStatus("connected");
+  },
+
   // 从云函数加载房间、成员、记录和当前用户权限。
   loadRoom() {
     if (!this.data.roomId) {
@@ -317,15 +519,9 @@ Page({
         const isOwner = result.currentUserRole === "owner";
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
-        const members = (result.members || []).map((member) => ({
-          ...member,
-          scoreTone: getScoreTone(member.score || 0),
-          canRename:
-            member._id === currentMemberId &&
-            !member.nicknameEdited &&
-            result.room &&
-            result.room.status === "active",
-        }));
+        const members = (result.members || []).map((member) =>
+          normalizeMemberForView(member, currentMemberId, result.room)
+        );
         const formattedRecords = (result.recentRecords || []).map((record) =>
           formatRecord(record, currentMemberId)
         );
@@ -349,6 +545,7 @@ Page({
           loadFailed: false,
           loadErrorText: "",
         });
+        this.startRoomWatchers();
         saveRecentRoom({
           roomId: result.room._id,
           roomCode: result.room.roomCode,
@@ -402,7 +599,7 @@ Page({
     try {
       this.setData({
         roomQrVisible: true,
-        roomQrRows: buildQrRows(roomCode),
+        roomQrRows: buildQrViewRows(roomCode),
       });
     } catch (error) {
       showError(error);
@@ -459,7 +656,6 @@ Page({
       })
       .then(() => {
         wx.showToast({ title: "已修改", icon: "success" });
-        return this.loadRoom();
       })
       .catch((error) => {
         if (error.message !== "已取消") showError(error);
@@ -513,7 +709,6 @@ Page({
       })
       .then(() => {
         wx.showToast({ title: "已更新", icon: "success" });
-        return this.loadRoom();
       })
       .catch((error) => {
         if (error.message !== "已取消") showError(error);
@@ -583,7 +778,6 @@ Page({
       .then(() => {
         wx.showToast({ title: "已更新", icon: "success" });
         this.setData({ batchSelected: [], batchMode: false });
-        return this.loadRoom();
       })
       .catch((error) => {
         if (error.message !== "已取消") showError(error);
@@ -740,7 +934,6 @@ Page({
           transferMode: false,
           transferSelected: [],
         });
-        return this.loadRoom();
       })
       .catch(showError)
       .finally(() => {
@@ -767,7 +960,6 @@ Page({
         })
           .then(() => {
             wx.showToast({ title: "已撤销", icon: "success" });
-            return this.loadRoom();
           })
           .catch(showError)
           .finally(() => {
@@ -788,7 +980,9 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: "关闭中" });
         callScoreFunction("closeRoom", { roomId: this.data.roomId })
-          .then(() => this.loadRoom())
+          .then(() => {
+            wx.showToast({ title: "已关闭", icon: "success" });
+          })
           .catch(showError)
           .finally(() => wx.hideLoading());
       },

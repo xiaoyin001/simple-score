@@ -24,7 +24,6 @@ const _ = db.command;
  * targets 影响对象；amount 分值；beforeSnapshot/afterSnapshot 前后快照；
  * remark 备注；isUndone 撤销标记；undoRecordId 撤销关联；createdAt 操作时间。
  */
-
 // 业务集合名称，云函数启动后会按需确保集合存在。
 const COLLECTIONS = ["rooms", "room_members", "score_records"];
 
@@ -286,6 +285,7 @@ async function createRoom(event) {
         expireAt,
         purgeAt,
         closedAt: null,
+        memberOpenids: [wxContext.OPENID],
         version: 1,
       },
     });
@@ -307,25 +307,24 @@ async function createRoom(event) {
       },
     });
 
-    await db.collection("score_records").add({
-      data: {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname: ownerNickname,
-        type: RECORD_TYPE.ROOM_CREATED,
-        targets: [{ type: "room", roomId, name }],
-        amount: 0,
-        beforeSnapshot: {},
-        afterSnapshot: {
-          room: { publicScore },
-          members: [{ memberId: memberResult._id, score: 0 }],
-        },
-        remark: "创建房间",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt,
+    const recordData = {
+      roomId,
+      operatorOpenid: wxContext.OPENID,
+      operatorNickname: ownerNickname,
+      type: RECORD_TYPE.ROOM_CREATED,
+      targets: [{ type: "room", roomId, name }],
+      amount: 0,
+      beforeSnapshot: {},
+      afterSnapshot: {
+        room: { publicScore },
+        members: [{ memberId: memberResult._id, score: 0 }],
       },
-    });
+      remark: "创建房间",
+      isUndone: false,
+      undoRecordId: null,
+      createdAt,
+    };
+    await db.collection("score_records").add({ data: recordData });
 
     return success({
       roomId,
@@ -387,6 +386,15 @@ async function joinRoom(event) {
   const joinedAt = now();
   const nickname = buildNickname(event.nickname, activeCount.total + 1);
   const avatarUrl = normalizeText(event.avatarUrl);
+  const nextMemberOpenids = [
+    ...new Set(
+      [
+        ...(Array.isArray(room.memberOpenids) ? room.memberOpenids : []),
+        room.ownerOpenid,
+        wxContext.OPENID,
+      ].filter(Boolean)
+    ),
+  ];
   const memberResult = await db.collection("room_members").add({
     data: {
       roomId: room._id,
@@ -403,22 +411,28 @@ async function joinRoom(event) {
     },
   });
 
-  await db.collection("score_records").add({
+  await db.collection("rooms").doc(room._id).update({
     data: {
-      roomId: room._id,
-      operatorOpenid: wxContext.OPENID,
-      operatorNickname: nickname,
-      type: RECORD_TYPE.MEMBER_JOINED,
-      targets: [{ type: "member", memberId: memberResult._id, nickname }],
-      amount: 0,
-      beforeSnapshot: {},
-      afterSnapshot: { members: [{ memberId: memberResult._id, score: 0 }] },
-      remark: "加入房间",
-      isUndone: false,
-      undoRecordId: null,
-      createdAt: joinedAt,
+      updatedAt: joinedAt,
+      memberOpenids: nextMemberOpenids,
+      version: _.inc(1),
     },
   });
+  const recordData = {
+    roomId: room._id,
+    operatorOpenid: wxContext.OPENID,
+    operatorNickname: nickname,
+    type: RECORD_TYPE.MEMBER_JOINED,
+    targets: [{ type: "member", memberId: memberResult._id, nickname }],
+    amount: 0,
+    beforeSnapshot: {},
+    afterSnapshot: { members: [{ memberId: memberResult._id, score: 0 }] },
+    remark: "加入房间",
+    isUndone: false,
+    undoRecordId: null,
+    createdAt: joinedAt,
+  };
+  await db.collection("score_records").add({ data: recordData });
 
   return success({
     roomId: room._id,
@@ -473,6 +487,21 @@ async function getRoom(event) {
     if (b.score !== a.score) return b.score - a.score;
     return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
   });
+  const activeOpenids = [...new Set(members.map((member) => member.openid).filter(Boolean))];
+  const knownOpenids = Array.isArray(room.memberOpenids) ? room.memberOpenids : [];
+  const shouldSyncMemberOpenids =
+    activeOpenids.length !== knownOpenids.length ||
+    activeOpenids.some((openid) => !knownOpenids.includes(openid));
+  if (shouldSyncMemberOpenids) {
+    await db.collection("rooms").doc(roomId).update({
+      data: {
+        memberOpenids: activeOpenids,
+        updatedAt: now(),
+        version: _.inc(1),
+      },
+    });
+    room.memberOpenids = activeOpenids;
+  }
 
   return success({
     room,
@@ -527,7 +556,7 @@ async function updateNickname(event) {
         },
       });
 
-      const roomUpdate = { updatedAt };
+      const roomUpdate = { updatedAt, version: _.inc(1) };
       if (member.role === MEMBER_ROLE.OWNER || room.ownerOpenid === wxContext.OPENID) {
         roomUpdate.ownerNickname = nickname;
       }
@@ -644,35 +673,36 @@ async function updateScore(event) {
         },
       });
       await transaction.collection("rooms").doc(roomId).update({
-        data: { updatedAt: changedAt },
+        data: { updatedAt: changedAt, version: _.inc(1) },
       });
-      await transaction.collection("score_records").add({
-        data: {
-          roomId,
-          operatorOpenid: wxContext.OPENID,
-          operatorNickname,
-          type: recordType,
-          targets: [
-            {
-              type: "member",
-              memberId,
-              nickname: member.nickname,
-              beforeScore,
-              afterScore,
-            },
-          ],
-          amount,
-          beforeSnapshot: {
-            members: [{ memberId, score: beforeScore }],
+      const recordData = {
+        roomId,
+        operatorOpenid: wxContext.OPENID,
+        operatorNickname,
+        type: recordType,
+        targets: [
+          {
+            type: "member",
+            memberId,
+            nickname: member.nickname,
+            beforeScore,
+            afterScore,
           },
-          afterSnapshot: {
-            members: [{ memberId, score: afterScore }],
-          },
-          remark: action === "subtract" ? "成员扣分" : "成员加分",
-          isUndone: false,
-          undoRecordId: null,
-          createdAt: changedAt,
+        ],
+        amount,
+        beforeSnapshot: {
+          members: [{ memberId, score: beforeScore }],
         },
+        afterSnapshot: {
+          members: [{ memberId, score: afterScore }],
+        },
+        remark: action === "subtract" ? "成员扣分" : "成员加分",
+        isUndone: false,
+        undoRecordId: null,
+        createdAt: changedAt,
+      };
+      await transaction.collection("score_records").add({
+        data: recordData,
       });
     });
 
@@ -745,23 +775,24 @@ async function batchUpdateScore(event) {
       }
 
       await transaction.collection("rooms").doc(roomId).update({
-        data: { updatedAt: changedAt },
+        data: { updatedAt: changedAt, version: _.inc(1) },
       });
+      const recordData = {
+        roomId,
+        operatorOpenid: wxContext.OPENID,
+        operatorNickname,
+        type: recordType,
+        targets,
+        amount,
+        beforeSnapshot: { members: beforeMembers },
+        afterSnapshot: { members: afterMembers },
+        remark: action === "subtract" ? "批量扣分" : "批量加分",
+        isUndone: false,
+        undoRecordId: null,
+        createdAt: changedAt,
+      };
       await transaction.collection("score_records").add({
-        data: {
-          roomId,
-          operatorOpenid: wxContext.OPENID,
-          operatorNickname,
-          type: recordType,
-          targets,
-          amount,
-          beforeSnapshot: { members: beforeMembers },
-          afterSnapshot: { members: afterMembers },
-          remark: action === "subtract" ? "批量扣分" : "批量加分",
-          isUndone: false,
-          undoRecordId: null,
-          createdAt: changedAt,
-        },
+        data: recordData,
       });
     });
 
@@ -942,6 +973,7 @@ async function transferScore(event) {
           data: {
             publicScore: nextPublicScore,
             updatedAt: changedAt,
+            version: _.inc(1),
           },
         });
         targets.push({
@@ -951,7 +983,7 @@ async function transferScore(event) {
         });
       } else {
         await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt },
+          data: { updatedAt: changedAt, version: _.inc(1) },
         });
       }
 
@@ -1000,21 +1032,22 @@ async function transferScore(event) {
       beforeSnapshot.members = beforeMembers;
       afterSnapshot.members = afterMembers;
 
+      const recordData = {
+        roomId,
+        operatorOpenid: wxContext.OPENID,
+        operatorNickname,
+        type: recordType,
+        targets,
+        amount,
+        beforeSnapshot,
+        afterSnapshot,
+        remark: "积分转移",
+        isUndone: false,
+        undoRecordId: null,
+        createdAt: changedAt,
+      };
       await transaction.collection("score_records").add({
-        data: {
-          roomId,
-          operatorOpenid: wxContext.OPENID,
-          operatorNickname,
-          type: recordType,
-          targets,
-          amount,
-          beforeSnapshot,
-          afterSnapshot,
-          remark: "积分转移",
-          isUndone: false,
-          undoRecordId: null,
-          createdAt: changedAt,
-        },
+        data: recordData,
       });
     });
 
@@ -1130,11 +1163,12 @@ async function batchTransferScore(event) {
           data: {
             publicScore: nextPublicScore,
             updatedAt: changedAt,
+            version: _.inc(1),
           },
         });
       } else {
         await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt },
+          data: { updatedAt: changedAt, version: _.inc(1) },
         });
       }
 
@@ -1163,21 +1197,22 @@ async function batchTransferScore(event) {
       if (beforeMembers.length) beforeSnapshot.members = beforeMembers;
       if (afterMembers.length) afterSnapshot.members = afterMembers;
 
+      const recordData = {
+        roomId,
+        operatorOpenid: wxContext.OPENID,
+        operatorNickname,
+        type: recordType,
+        targets,
+        amount,
+        beforeSnapshot,
+        afterSnapshot,
+        remark: transferTargets.length > 1 ? "批量转移" : "积分转移",
+        isUndone: false,
+        undoRecordId: null,
+        createdAt: changedAt,
+      };
       await transaction.collection("score_records").add({
-        data: {
-          roomId,
-          operatorOpenid: wxContext.OPENID,
-          operatorNickname,
-          type: recordType,
-          targets,
-          amount,
-          beforeSnapshot,
-          afterSnapshot,
-          remark: transferTargets.length > 1 ? "批量转移" : "积分转移",
-          isUndone: false,
-          undoRecordId: null,
-          createdAt: changedAt,
-        },
+        data: recordData,
       });
     });
 
@@ -1249,6 +1284,7 @@ async function undoLastAction(event) {
           data: {
             publicScore: nextPublicScore,
             updatedAt: changedAt,
+            version: _.inc(1),
           },
         });
         undoBeforeSnapshot.room = { publicScore: currentPublicScore };
@@ -1260,7 +1296,7 @@ async function undoLastAction(event) {
         });
       } else {
         await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt },
+          data: { updatedAt: changedAt, version: _.inc(1) },
         });
       }
 
@@ -1310,21 +1346,22 @@ async function undoLastAction(event) {
       if (undoBeforeMembers.length) undoBeforeSnapshot.members = undoBeforeMembers;
       if (undoAfterMembers.length) undoAfterSnapshot.members = undoAfterMembers;
 
+      const recordData = {
+        roomId,
+        operatorOpenid: wxContext.OPENID,
+        operatorNickname,
+        type: RECORD_TYPE.UNDO,
+        targets: undoTargets,
+        amount: record.amount || 0,
+        beforeSnapshot: undoBeforeSnapshot,
+        afterSnapshot: undoAfterSnapshot,
+        remark: "撤销操作",
+        isUndone: false,
+        undoRecordId: record._id,
+        createdAt: changedAt,
+      };
       const undoResult = await transaction.collection("score_records").add({
-        data: {
-          roomId,
-          operatorOpenid: wxContext.OPENID,
-          operatorNickname,
-          type: RECORD_TYPE.UNDO,
-          targets: undoTargets,
-          amount: record.amount || 0,
-          beforeSnapshot: undoBeforeSnapshot,
-          afterSnapshot: undoAfterSnapshot,
-          remark: "撤销操作",
-          isUndone: false,
-          undoRecordId: record._id,
-          createdAt: changedAt,
-        },
+        data: recordData,
       });
 
       await transaction.collection("score_records").doc(record._id).update({
@@ -1362,23 +1399,25 @@ async function closeRoom(event) {
         status: ROOM_STATUS.CLOSED,
         closedAt,
         updatedAt: closedAt,
+        version: _.inc(1),
       },
     });
+    const recordData = {
+      roomId,
+      operatorOpenid: wxContext.OPENID,
+      operatorNickname,
+      type: RECORD_TYPE.ROOM_CLOSED,
+      targets: [{ type: "room", roomId, name: room.name }],
+      amount: 0,
+      beforeSnapshot: { room: { status: ROOM_STATUS.ACTIVE } },
+      afterSnapshot: { room: { status: ROOM_STATUS.CLOSED } },
+      remark: "关闭房间",
+      isUndone: false,
+      undoRecordId: null,
+      createdAt: closedAt,
+    };
     await db.collection("score_records").add({
-      data: {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: RECORD_TYPE.ROOM_CLOSED,
-        targets: [{ type: "room", roomId, name: room.name }],
-        amount: 0,
-        beforeSnapshot: { room: { status: ROOM_STATUS.ACTIVE } },
-        afterSnapshot: { room: { status: ROOM_STATUS.CLOSED } },
-        remark: "关闭房间",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt: closedAt,
-      },
+      data: recordData,
     });
 
     return success();
