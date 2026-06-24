@@ -94,6 +94,9 @@ const UNDOABLE_TYPES = [
   RECORD_TYPE.BATCH_TRANSFER,
 ];
 
+// 单次清理过期房间的最大数量，避免定时任务一次处理过多数据。
+const MAX_CLEANUP_LIMIT = 100;
+
 // 统一成功响应结构，前端依赖 success 字段判断调用结果。
 function success(data = {}) {
   return {
@@ -1313,8 +1316,67 @@ async function closeRoom(event) {
   }
 }
 
+async function removeByRoomId(collectionName, roomId) {
+  let removedTotal = 0;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await db.collection(collectionName).where({ roomId }).remove();
+    const removed = Number((result.stats && result.stats.removed) || result.deleted || 0);
+    removedTotal += removed;
+    if (!removed) break;
+  }
+  return removedTotal;
+}
+
+// 清理超过最长存活时间的房间及其成员、记录。
+async function cleanupExpiredRooms(event = {}) {
+  await ensureCollections();
+
+  const limitInput = parseInteger(event.limit || 50);
+  const limit = Math.min(
+    Math.max(Number.isInteger(limitInput) ? limitInput : 50, 1),
+    MAX_CLEANUP_LIMIT
+  );
+  const cutoff = now();
+  const expiredRooms = await db
+    .collection("rooms")
+    .where({
+      expireAt: _.lte(cutoff),
+    })
+    .limit(limit)
+    .get();
+
+  let roomsRemoved = 0;
+  let membersRemoved = 0;
+  let recordsRemoved = 0;
+
+  for (const room of expiredRooms.data || []) {
+    const roomId = room._id;
+    recordsRemoved += await removeByRoomId("score_records", roomId);
+    membersRemoved += await removeByRoomId("room_members", roomId);
+    try {
+      await db.collection("rooms").doc(roomId).remove();
+      roomsRemoved += 1;
+    } catch (error) {
+      // 如果房间已被其他清理任务删除，保持清理任务幂等。
+    }
+  }
+
+  return success({
+    scanned: expiredRooms.data.length,
+    roomsRemoved,
+    membersRemoved,
+    recordsRemoved,
+  });
+}
+
 // 云函数入口，根据 type 分发到具体业务 action。
-exports.main = async (event) => {
+exports.main = async (event = {}) => {
+  const triggerName = event.TriggerName || event.triggerName || event.trigger_name;
+  const triggerType = event.Type || event.type;
+  if (triggerName === "cleanupExpiredRooms" || triggerType === "Timer") {
+    return cleanupExpiredRooms(event);
+  }
+
   switch (event.type) {
     case "getOpenId":
     case "login":
@@ -1337,6 +1399,8 @@ exports.main = async (event) => {
       return undoLastAction(event);
     case "closeRoom":
       return closeRoom(event);
+    case "cleanupExpiredRooms":
+      return cleanupExpiredRooms(event);
     default:
       return fail("未知操作类型", "UNKNOWN_TYPE");
   }

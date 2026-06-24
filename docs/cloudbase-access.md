@@ -72,6 +72,18 @@ tcb -e cloud1-d0g5o9l1ada4cc67e fn log scoreFunctions
 tcb -e cloud1-d0g5o9l1ada4cc67e fn deploy scoreFunctions --dir cloudfunctions/scoreFunctions --force
 ```
 
+创建或更新过期房间清理触发器：
+
+```bash
+tcb -e cloud1-d0g5o9l1ada4cc67e fn trigger create scoreFunctions --trigger-name cleanupExpiredRooms --cron "0 0 * * * * *"
+```
+
+触发器每小时执行一次，云函数会删除 `expireAt <= 当前时间` 的房间、成员和操作记录。手动触发清理可调用：
+
+```bash
+tcb -e cloud1-d0g5o9l1ada4cc67e fn invoke scoreFunctions -d '{"type":"cleanupExpiredRooms","limit":50}'
+```
+
 部署后在微信开发者工具中重新编译小程序，并人工验证创建房间、加入房间、记分、转移、撤销和关闭房间流程。
 
 ## 安全边界

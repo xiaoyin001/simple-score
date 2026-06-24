@@ -5,7 +5,9 @@
 ## 当前 MVP 功能
 
 - 创建记分房间，支持房间码和分享链接加入
+- 首页扫码加入，房间页可展示房间二维码
 - 房间最多 12 名成员，成员初始积分为 0
+- 房间默认最长存活 24 小时，过期数据由云函数定时清理
 - 公共积分池
 - 房主单人加分、扣分
 - 房主批量加分、扣分
@@ -26,6 +28,7 @@ miniprogram/
     records/
   utils/
     api.js
+    qrcode.js
 cloudfunctions/
   scoreFunctions/
 docs/

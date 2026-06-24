@@ -1,4 +1,5 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
+const { buildQrRows } = require("../../utils/qrcode");
 
 // 操作类型到页面展示文案的映射。
 const TYPE_LABELS = {
@@ -282,6 +283,10 @@ Page({
     transferTargetSummary: "未选择目标",
     // 当前选中目标数量。
     transferTargetCount: 0,
+    // 房间二维码弹窗是否展示。
+    roomQrVisible: false,
+    // 房间码二维码矩阵。
+    roomQrRows: [],
   },
 
   // 初始化房间 ID 并加载房间数据。
@@ -359,6 +364,30 @@ Page({
   copyRoomCode() {
     wx.setClipboardData({
       data: (this.data.room && this.data.room.roomCode) || "",
+    });
+  },
+
+  // 展示房间码二维码，供其他成员用首页“扫码加入”扫描。
+  showRoomQrCode() {
+    const roomCode = (this.data.room && this.data.room.roomCode) || "";
+    if (!roomCode) {
+      wx.showToast({ title: "缺少房间码", icon: "none" });
+      return;
+    }
+    try {
+      this.setData({
+        roomQrVisible: true,
+        roomQrRows: buildQrRows(roomCode),
+      });
+    } catch (error) {
+      showError(error);
+    }
+  },
+
+  // 关闭房间码二维码弹窗。
+  closeRoomQrCode() {
+    this.setData({
+      roomQrVisible: false,
     });
   },
 

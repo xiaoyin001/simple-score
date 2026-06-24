@@ -4,7 +4,10 @@
       <view class="room-name">{{room.name}}</view>
       <view class="room-meta">房间码 {{room.roomCode}} · {{members.length}}/{{room.memberLimit}} 人</view>
     </view>
-    <button class="copy-button" bindtap="copyRoomCode">复制</button>
+    <view class="room-header-actions">
+      <button class="copy-button" bindtap="copyRoomCode">复制</button>
+      <button class="copy-button" bindtap="showRoomQrCode">二维码</button>
+    </view>
   </view>
 
   <view class="status-bar" wx:if="{{room.status !== 'active'}}">
@@ -127,6 +130,32 @@
         <button class="dialog-button secondary" bindtap="closeTransferDialog">取消</button>
         <button class="dialog-button primary" bindtap="submitTransfer">确认转移</button>
       </view>
+    </view>
+  </view>
+
+  <view class="qr-mask" wx:if="{{roomQrVisible}}" catchtap="closeRoomQrCode">
+    <view class="qr-dialog" catchtap="noop">
+      <view class="qr-title">房间二维码</view>
+      <view class="qr-code-text">{{room.roomCode}}</view>
+      <view class="qr-matrix">
+        <view
+          class="qr-row"
+          wx:for="{{roomQrRows}}"
+          wx:for-item="row"
+          wx:for-index="rowIndex"
+          wx:key="rowIndex"
+        >
+          <view
+            wx:for="{{row}}"
+            wx:for-item="cell"
+            wx:for-index="cellIndex"
+            wx:key="cellIndex"
+            class="qr-cell {{cell.dark ? 'dark' : ''}}"
+          ></view>
+        </view>
+      </view>
+      <view class="qr-tip">使用首页“扫码加入”扫描</view>
+      <button class="qr-close-button" bindtap="closeRoomQrCode">关闭</button>
     </view>
   </view>
 

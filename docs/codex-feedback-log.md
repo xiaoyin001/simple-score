@@ -23,6 +23,34 @@
 
 ## 当前反馈
 
+### 2026-06-24 扫码加入二维码和房间清理策略缺失
+
+```text
+日期：2026-06-24
+来源：human
+场景：加入房间 / 分享 / 数据生命周期
+结果：negative
+分值：-7
+严重度：4
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `miniprogram/pages/index/index.js`：`scanJoin`
+- `miniprogram/pages/room/index.*`：房间二维码入口和弹窗
+- `miniprogram/utils/qrcode.js`：房间码二维码矩阵生成
+- `cloudfunctions/scoreFunctions/index.js`：`cleanupExpiredRooms`
+- `cloudfunctions/scoreFunctions/config.json`：`cleanupExpiredRooms` 定时触发器
+- `docs/requirements.md`、`docs/architecture.md`、`docs/cloudbase-access.md`、`docs/codex-workflow.md`：扫码、二维码和清理策略
+问题对应关系：
+- 首页有扫码入口但房间内没有可被扫描的二维码：对应房间页缺少二维码弹窗。
+- 数据库会持续持久化历史房间数据：对应缺少过期数据清理动作和定时触发器。
+- 房间最长存活应为 24 小时：对应需求和架构需要明确 `expireAt` 是清理依据。
+现象：用户准备真实使用扫码加入时，房间页没有二维码可展示；同时担心云数据库长期堆积房间、成员和记录数据。
+根因或推测：此前只实现了扫码解析和房间 `expireAt` 校验，没有实现房间码二维码展示，也没有实现物理清理策略。
+处理方式：房间页新增“二维码”按钮和房间码二维码弹窗；首页扫码入口继续识别房间码；云函数新增 `cleanupExpiredRooms`，按 `expireAt <= 当前时间` 删除房间、成员和操作记录；新增每小时定时触发器配置和 CLI 创建命令；文档同步最长存活 24 小时策略。
+是否需要新增自动检查或测试：需要人工验收二维码在微信开发者工具或真机上可被首页扫码入口识别；清理函数可通过 CLI 手动调用低 limit 验证，但线上执行前应确认不会误删未过期数据。
+```
+
 ### 2026-06-23 成员排行按钮挤压标题
 
 ```text

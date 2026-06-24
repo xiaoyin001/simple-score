@@ -30,6 +30,14 @@ page {
   font-size: 24rpx;
 }
 
+.room-header-actions {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 12rpx;
+  margin-left: 18rpx;
+}
+
 .copy-button,
 .share-button,
 .text-button {
@@ -363,6 +371,93 @@ page {
   justify-content: center;
   padding: 32rpx;
   background: rgba(17, 24, 39, 0.45);
+  box-sizing: border-box;
+}
+
+.qr-mask {
+  position: fixed;
+  z-index: 22;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx;
+  background: rgba(17, 24, 39, 0.45);
+  box-sizing: border-box;
+}
+
+.qr-dialog {
+  width: 100%;
+  padding: 32rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.qr-title {
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+.qr-code-text {
+  margin-top: 10rpx;
+  color: #1f7a5a;
+  font-size: 34rpx;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.qr-matrix {
+  width: 464rpx;
+  height: 464rpx;
+  margin: 28rpx auto 0;
+  padding: 64rpx;
+  background: #ffffff;
+  border: 2rpx solid #e5e7eb;
+  box-sizing: border-box;
+}
+
+.qr-row {
+  display: flex;
+  height: 16rpx;
+}
+
+.qr-cell {
+  width: 16rpx;
+  height: 16rpx;
+  background: #ffffff;
+}
+
+.qr-cell.dark {
+  background: #111827;
+}
+
+.qr-tip {
+  margin-top: 18rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.qr-close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 70rpx;
+  margin: 24rpx 0 0;
+  border-radius: 12rpx;
+  background: #eef7f3;
+  color: #1f7a5a;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1;
   box-sizing: border-box;
 }
 
