@@ -1,4 +1,5 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
+const { getRoomProfile } = require("../../utils/profile");
 
 Page({
   data: {
@@ -12,6 +13,14 @@ Page({
     nickname: "",
     // 提交中状态，防止重复创建。
     submitting: false,
+  },
+
+  // 进入页面时默认使用首页设置的名称。
+  onLoad() {
+    const profile = getRoomProfile();
+    this.setData({
+      nickname: profile.nickname,
+    });
   },
 
   // 根据输入框绑定的 field 更新对应表单字段。
@@ -36,11 +45,13 @@ Page({
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "创建中" });
+    const profile = getRoomProfile();
     callScoreFunction("createRoom", {
       name,
       memberLimit: Number(this.data.memberLimit),
       publicScore: Number(this.data.publicScore),
-      nickname: this.data.nickname,
+      nickname: String(this.data.nickname || "").trim() || profile.nickname,
+      avatarUrl: profile.avatarUrl,
     })
       .then((result) => {
         saveRecentRoom({

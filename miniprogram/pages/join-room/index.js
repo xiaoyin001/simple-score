@@ -1,4 +1,5 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
+const { getRoomProfile } = require("../../utils/profile");
 
 Page({
   data: {
@@ -14,9 +15,11 @@ Page({
 
   // 接收首页、扫码或分享路径传入的房间参数。
   onLoad(options) {
+    const profile = getRoomProfile();
     this.setData({
       roomId: options.roomId || "",
       roomCode: options.roomCode || "",
+      nickname: profile.nickname,
     });
   },
 
@@ -43,10 +46,12 @@ Page({
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "加入中" });
+    const profile = getRoomProfile();
     callScoreFunction("joinRoom", {
       roomId,
       roomCode,
-      nickname: this.data.nickname,
+      nickname: String(this.data.nickname || "").trim() || profile.nickname,
+      avatarUrl: profile.avatarUrl,
     })
       .then((result) => {
         saveRecentRoom({
