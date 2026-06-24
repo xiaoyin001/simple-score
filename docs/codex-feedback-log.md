@@ -23,6 +23,33 @@
 
 ## 当前反馈
 
+### 2026-06-24 默认名入口脱离头像授权流程
+
+```text
+日期：2026-06-24
+来源：human
+场景：首页 / 默认名设置 / 创建房间 / 加入房间
+结果：negative
+分值：-6
+严重度：4
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/index/index.*`：首页默认名输入和保存区
+- `miniprogram/utils/profile.js`：本地默认名缓存和“我”兜底
+- `miniprogram/pages/create-room/index.js`：创建房间昵称带入
+- `miniprogram/pages/join-room/index.js`：加入房间昵称带入
+- `docs/requirements.md`、`docs/architecture.md`：默认名和头像处理边界
+问题对应关系：
+- 默认名字问题还没解决：对应首页身份胶囊把头像、授权和编辑入口混在一起，默认名设置不够直接。
+- 头像不好处理就不处理头像：对应前端移除微信授权、头像选择和头像传参，只保留默认名。
+- 设计图没有继续存在的意义：对应删除剩余方案图，并移除过时方案文档。
+现象：用户无法明确完成默认名设置，头像处理增加了交互和审核复杂度，但对多人活动记分核心流程没有必要。
+根因或推测：此前首页用户信息方案试图同时处理头像授权、身份展示和默认名编辑，导致默认名主任务被弱化。
+处理方式：首页改为直接展示默认名输入和保存按钮；默认名未保存时前端使用“我”作为创建和加入房间昵称兜底；创建和加入请求不再传头像字段；删除未使用设计图和过时方案文档。
+是否需要新增自动检查或测试：当前通过语法和文案检查覆盖；仍需微信开发者工具人工验证首页保存默认名后，创建页和加入页默认昵称正确带入。
+```
+
 ### 2026-06-24 主动操作后整页重新加载影响体验
 
 ```text
@@ -107,7 +134,7 @@
 影响模块：miniprogram / docs
 关联代码位置：
 - `miniprogram/assets/app-icon.png`：黄鸭记分板 icon 风格参考
-- `docs/assets/ui-redesign/ui-redesign-effect.png`：本轮确认的视觉效果图
+- 本轮确认的视觉效果图：已用于确定 UI 方向，后续不作为仓库必需资产保留
 - `miniprogram/assets/app-icon.png`：小程序运行时使用的 icon 资源
 - `miniprogram/app.wxss`、`miniprogram/app.json`：全局背景和导航色
 - `miniprogram/pages/index/index.*`：首页黄鸭品牌卡和三色入口
@@ -137,7 +164,7 @@
 置信度：4
 影响模块：miniprogram / docs
 关联代码位置：
-- `docs/home-profile-ui-plan.md`：方案 C 执行计划和自查
+- 首页默认名方案：方案 C 已废弃，当前改为直接可见的默认名输入和保存区
 - `miniprogram/pages/index/index.js`：默认名草稿、保存、取消和校验状态
 - `miniprogram/pages/index/index.wxml`：身份胶囊和默认名编辑条
 - `miniprogram/pages/index/index.wxss`：身份胶囊、编辑条和状态样式
@@ -218,17 +245,17 @@
 关联代码位置：
 - `miniprogram/pages/index/index.*`：当前用户信息、微信资料获取、默认名编辑
 - `miniprogram/utils/profile.js`：本地用户资料缓存
-- `miniprogram/pages/create-room/index.js`：创建房间默认昵称和头像传参
-- `miniprogram/pages/join-room/index.js`：加入房间默认昵称和头像传参
+- `miniprogram/pages/create-room/index.js`：创建房间默认昵称传参
+- `miniprogram/pages/join-room/index.js`：加入房间默认昵称传参
 - `docs/requirements.md`、`docs/architecture.md`：首页用户信息和默认名规则
 问题对应关系：
-- 首页不知道当前是哪个用户：对应首页缺少当前用户头像和名称展示。
+- 首页不知道当前默认使用什么昵称：对应首页缺少清晰的默认名设置和展示。
 - 每个用户需要默认名：对应本地 `userProfile.defaultName` 缓存。
 - 加入房间应默认使用该名称：对应创建页和加入页初始化昵称并向云函数传递。
 现象：用户进入首页后无法确认当前身份，加入房间时需要重复输入昵称。
 根因或推测：此前昵称只存在创建/加入表单中，未沉淀为首页级本地用户偏好。
-处理方式：新增首页用户信息区和本地资料工具；创建和加入房间默认带入首页默认名，并传递头像字段。
-是否需要新增自动检查或测试：当前通过语法检查覆盖；需要微信开发者工具人工验证微信授权、头像选择、默认名编辑、创建和加入房间默认昵称。
+处理方式：新增首页默认名设置和本地资料工具；创建和加入房间默认带入首页默认名。后续简化为不处理头像，不传递头像字段。
+是否需要新增自动检查或测试：当前通过语法检查覆盖；需要微信开发者工具人工验证默认名保存、创建和加入房间默认昵称。
 ```
 
 ### 2026-06-24 编辑 icon 多次未命中后改为文字按钮

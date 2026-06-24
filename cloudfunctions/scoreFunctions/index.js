@@ -15,7 +15,7 @@ const _ = db.command;
  */
 /**
  * 成员集合字段：
- * roomId 所属房间；openid 用户标识；nickname 显示昵称；avatarUrl 头像；
+ * roomId 所属房间；openid 用户标识；nickname 显示昵称；
  * score 当前积分；role 成员角色；joinedAt/updatedAt/leftAt 成员时间；status 成员状态。
  */
 /**
@@ -257,7 +257,6 @@ async function createRoom(event) {
   const memberLimit = parseInteger(event.memberLimit || 12);
   const publicScore = parseInteger(event.publicScore || 0);
   const ownerNickname = buildNickname(event.nickname, 1);
-  const avatarUrl = normalizeText(event.avatarUrl);
 
   if (!name) return fail("房间名称不能为空");
   if (name.length > 20) return fail("房间名称最多 20 个字符");
@@ -296,7 +295,6 @@ async function createRoom(event) {
         roomId,
         openid: wxContext.OPENID,
         nickname: ownerNickname,
-        avatarUrl,
         score: 0,
         role: MEMBER_ROLE.OWNER,
         joinedAt: createdAt,
@@ -385,7 +383,6 @@ async function joinRoom(event) {
 
   const joinedAt = now();
   const nickname = buildNickname(event.nickname, activeCount.total + 1);
-  const avatarUrl = normalizeText(event.avatarUrl);
   const nextMemberOpenids = [
     ...new Set(
       [
@@ -400,7 +397,6 @@ async function joinRoom(event) {
       roomId: room._id,
       openid: wxContext.OPENID,
       nickname,
-      avatarUrl,
       score: 0,
       role: MEMBER_ROLE.MEMBER,
       joinedAt,

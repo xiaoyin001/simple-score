@@ -54,210 +54,98 @@ page {
   font-weight: 800;
 }
 
-.profile-capsule {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8rpx;
-  max-width: 300rpx;
-  min-height: 64rpx;
+.default-name-panel {
   margin-top: 6rpx;
-  padding: 8rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.86);
+  padding: 24rpx;
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, 0.9);
   border: 2rpx solid rgba(90, 52, 24, 0.08);
-  box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.1);
-  box-sizing: border-box;
+  box-shadow: 0 12rpx 28rpx rgba(111, 74, 28, 0.08);
 }
 
-.capsule-avatar {
+.default-name-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 52rpx;
-  min-width: 52rpx;
-  height: 52rpx;
-  margin: 0;
-  padding: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  background: #e7f7ee;
-  box-sizing: border-box;
-  font-size: 0;
-  line-height: 1;
+  justify-content: space-between;
+  gap: 16rpx;
 }
 
-.capsule-avatar::after {
-  border: 0;
-}
-
-.capsule-avatar-image {
-  width: 52rpx;
-  height: 52rpx;
-}
-
-.capsule-avatar-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52rpx;
-  height: 52rpx;
-  color: #278654;
-  font-size: 24rpx;
-  font-weight: 700;
-}
-
-.capsule-name {
-  flex: 1;
-  min-width: 0;
-  width: 96rpx;
-  height: 52rpx;
+.default-name-title {
   color: #3b260f;
-  font-size: 24rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.default-name-subtitle {
+  margin-top: 6rpx;
+  color: #765839;
+  font-size: 23rpx;
   font-weight: 600;
-  line-height: 52rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  box-sizing: border-box;
 }
 
-.capsule-auth,
-.capsule-check,
-.capsule-edit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.default-name-status {
   flex-shrink: 0;
-  height: 48rpx;
-  margin: 0;
-  padding: 0;
+  padding: 8rpx 16rpx;
   border-radius: 999rpx;
-  font-size: 22rpx;
-  box-sizing: border-box;
-  line-height: 1;
-}
-
-.capsule-auth {
-  width: 64rpx;
-  background: #e7f7ee;
-  color: #278654;
-}
-
-.capsule-check {
-  width: 44rpx;
-  background: #e7f7ee;
-  color: #278654;
-  font-weight: 700;
-}
-
-.capsule-edit {
-  width: 44rpx;
   background: #fff2b0;
   color: #7a5016;
+  font-size: 22rpx;
+  font-weight: 800;
 }
 
-.capsule-auth::after,
-.capsule-check::after,
-.capsule-edit::after {
-  border: 0;
-}
-
-.profile-editor {
-  margin-top: 6rpx;
-  padding: 18rpx;
-  border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.88);
-  border: 2rpx solid rgba(90, 52, 24, 0.08);
-  box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.08);
-}
-
-.profile-editor-row {
+.default-name-row {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 14rpx;
+  margin-top: 18rpx;
 }
 
-.editor-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  overflow: hidden;
-  background: #e7f7ee;
-}
-
-.editor-avatar-image {
-  width: 56rpx;
-  height: 56rpx;
-}
-
-.editor-avatar-placeholder {
-  color: #278654;
-  font-size: 24rpx;
-  font-weight: 700;
-}
-
-.editor-input {
+.default-name-input {
   flex: 1;
   min-width: 0;
-  height: 64rpx;
-  padding: 0 18rpx;
-  border-radius: 12rpx;
+  height: 72rpx;
+  padding: 0 20rpx;
+  border-radius: 16rpx;
   background: #fff8dd;
   color: #3b260f;
   font-size: 28rpx;
+  font-weight: 700;
   box-sizing: border-box;
 }
 
-.editor-cancel,
-.editor-save {
+.default-name-save {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 64rpx;
+  width: 108rpx;
+  height: 72rpx;
   margin: 0;
   padding: 0;
-  border-radius: 12rpx;
-  font-size: 24rpx;
+  border-radius: 16rpx;
+  background: #47c982;
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 800;
   line-height: 1;
 }
 
-.editor-cancel {
-  width: 72rpx;
-  background: #f6efe4;
-  color: #6a4d2e;
-}
-
-.editor-save {
-  width: 92rpx;
-  background: #47c982;
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.editor-cancel::after,
-.editor-save::after {
+.default-name-save::after {
   border: 0;
 }
 
-.editor-save[disabled] {
+.default-name-save[disabled] {
   background: #cbead8;
   color: #ffffff;
 }
 
-.profile-editor-hint {
+.default-name-hint {
   margin-top: 12rpx;
   color: #8a7358;
   font-size: 22rpx;
 }
 
-.profile-editor-hint.error {
+.default-name-hint.error {
   color: #b42318;
 }
 

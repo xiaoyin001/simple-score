@@ -25,7 +25,7 @@
       <input
         class="input"
         maxlength="20"
-        placeholder="不填则显示为成员1"
+        placeholder="不填则使用默认名"
         value="{{nickname}}"
         data-field="nickname"
         bindinput="onInput"

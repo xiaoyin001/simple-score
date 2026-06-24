@@ -7,49 +7,28 @@
         <view class="badge">最多 12 人</view>
       </view>
     </view>
-    <view class="profile-capsule">
-      <button class="capsule-avatar" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
-        <image
-          wx:if="{{userProfile.avatarUrl}}"
-          class="capsule-avatar-image"
-          src="{{userProfile.avatarUrl}}"
-          mode="aspectFill"
-        />
-        <view wx:else class="capsule-avatar-placeholder">{{avatarInitial}}</view>
-      </button>
-      <view class="capsule-name" bindtap="startProfileEdit">{{profileDisplayName}}</view>
-      <view wx:if="{{profileAuthed}}" class="capsule-check">✓</view>
-      <view wx:else class="capsule-auth" bindtap="getWechatProfile">授权</view>
-      <view class="capsule-edit" bindtap="startProfileEdit">改</view>
-    </view>
   </view>
 
-  <view class="profile-editor" wx:if="{{profileEditing}}">
-    <view class="profile-editor-row">
-      <view class="editor-avatar">
-        <image
-          wx:if="{{userProfile.avatarUrl}}"
-          class="editor-avatar-image"
-          src="{{userProfile.avatarUrl}}"
-          mode="aspectFill"
-        />
-        <view wx:else class="editor-avatar-placeholder">{{avatarInitial}}</view>
+  <view class="default-name-panel">
+    <view class="default-name-head">
+      <view>
+        <view class="default-name-title">默认名</view>
+        <view class="default-name-subtitle">创建或加入房间时自动带入</view>
       </view>
+      <view class="default-name-status">{{profileSavedName ? '已保存' : '未保存'}}</view>
+    </view>
+    <view class="default-name-row">
       <input
-        class="editor-input"
+        class="default-name-input"
         type="nickname"
         maxlength="20"
-        focus="{{profileEditing}}"
         disabled="{{profileSaving}}"
-        placeholder="请输入默认名"
+        placeholder="例如：小明"
         value="{{profileDraftName}}"
         bindinput="onProfileDraftInput"
       />
-      <button class="editor-cancel" disabled="{{profileSaving}}" bindtap="cancelProfileEdit">
-        取消
-      </button>
       <button
-        class="editor-save"
+        class="default-name-save"
         loading="{{profileSaving}}"
         disabled="{{profileSaving || !profileDraftName}}"
         bindtap="saveProfileName"
@@ -57,8 +36,8 @@
         {{profileSaving ? '保存中' : '保存'}}
       </button>
     </view>
-    <view class="profile-editor-hint {{profileError ? 'error' : ''}}">
-      {{profileError || '加入房间时默认使用这个名称'}}
+    <view class="default-name-hint {{profileError ? 'error' : ''}}">
+      {{profileError || '点击保存后，创建或加入房间会使用这个名称'}}
     </view>
   </view>
 

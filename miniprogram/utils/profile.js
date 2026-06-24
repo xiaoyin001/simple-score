@@ -1,4 +1,5 @@
 const USER_PROFILE_STORAGE_KEY = "userProfile";
+const DEFAULT_ROOM_NICKNAME = "我";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -14,7 +15,6 @@ function normalizeProfile(profile = {}) {
   );
   return {
     defaultName,
-    avatarUrl: normalizeText(profile.avatarUrl),
     updatedAt: Number(profile.updatedAt || 0),
   };
 }
@@ -37,18 +37,12 @@ function saveUserProfile(profile = {}) {
 function getRoomProfile() {
   const profile = getStoredProfile();
   return {
-    nickname: profile.defaultName,
-    avatarUrl: profile.avatarUrl,
+    nickname: profile.defaultName || DEFAULT_ROOM_NICKNAME,
   };
 }
 
-function getAvatarInitial(defaultName) {
-  const name = limitNickname(defaultName);
-  return name ? name.slice(0, 1) : "我";
-}
-
 module.exports = {
-  getAvatarInitial,
+  DEFAULT_ROOM_NICKNAME,
   getRoomProfile,
   getStoredProfile,
   saveUserProfile,

@@ -51,7 +51,6 @@ Page({
       roomId,
       roomCode,
       nickname: String(this.data.nickname || "").trim() || profile.nickname,
-      avatarUrl: profile.avatarUrl,
     })
       .then((result) => {
         saveRecentRoom({

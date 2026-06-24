@@ -4,6 +4,16 @@ node_modules/
 # 微信开发者工具本地配置
 project.private.config.json
 
+# 本地环境和凭证
+.env
+.env.*
+!.env.example
+*.local
+
+# 云开发 / CLI 本地缓存
+.tcb/
+.cloudbase/
+
 # 本地 Codex 规则
 AGENTS.md
 
@@ -22,3 +32,9 @@ Thumbs.db
 # 临时文件
 tmp/
 minitest/
+
+# 构建和覆盖率产物
+dist/
+build/
+coverage/
+miniprogram_npm/

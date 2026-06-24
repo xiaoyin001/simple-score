@@ -51,7 +51,6 @@ Page({
       memberLimit: Number(this.data.memberLimit),
       publicScore: Number(this.data.publicScore),
       nickname: String(this.data.nickname || "").trim() || profile.nickname,
-      avatarUrl: profile.avatarUrl,
     })
       .then((result) => {
         saveRecentRoom({
