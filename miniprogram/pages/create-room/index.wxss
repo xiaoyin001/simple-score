@@ -91,6 +91,36 @@ page {
   font-size: 22rpx;
 }
 
+.approval-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-top: 4rpx;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  background: #eaf8f0;
+  color: #32714e;
+}
+
+.approval-title {
+  color: #245d3f;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.approval-desc {
+  margin-top: 8rpx;
+  color: #32714e;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.approval-switch {
+  flex-shrink: 0;
+}
+
 .tip-card {
   margin-top: 24rpx;
   padding: 24rpx;

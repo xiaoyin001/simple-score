@@ -1,6 +1,6 @@
 # Codex 迭代工作流
 
-版本：v0.1  
+版本：v0.1
 更新日期：2026-06-23
 
 ## 1. 目标
@@ -31,14 +31,14 @@
 
 每轮代码变更后至少执行：
 
-```powershell
-node --check cloudfunctions\scoreFunctions\index.js
-node --check miniprogram\utils\api.js
-node --check miniprogram\pages\index\index.js
-node --check miniprogram\pages\create-room\index.js
-node --check miniprogram\pages\join-room\index.js
-node --check miniprogram\pages\room\index.js
-node --check miniprogram\pages\records\index.js
+```text
+node --check cloudfunctions/scoreFunctions/index.js
+node --check miniprogram/utils/api.js
+node --check miniprogram/pages/index/index.js
+node --check miniprogram/pages/create-room/index.js
+node --check miniprogram/pages/join-room/index.js
+node --check miniprogram/pages/room/index.js
+node --check miniprogram/pages/records/index.js
 rg -n "quickstart|QuickStart|example|cloudTipModal|envList|sales|scf|goods|databaseGuide|quickstartFunctions" miniprogram cloudfunctions README.md docs/architecture.md project.config.json
 rg -n "赌博|下注|筹码|现金|输赢金额|牌局结算|赌局|代币|虚拟币|博彩" miniprogram cloudfunctions README.md docs/architecture.md project.config.json
 ```
@@ -59,9 +59,9 @@ rg -n "赌博|下注|筹码|现金|输赢金额|牌局结算|赌局|代币|虚�
 12. 普通成员不能加扣分、批量记分、撤销或关闭房间。
 13. 普通成员可以将自己的积分转给他人或公共积分池，也可以从公共积分池转给自己。
 14. 关闭房间后不能继续改分。
-15. `cleanupExpiredRooms` 可清理超过 `purgeAt` 的房间、成员和记录；超过 `expireAt` 但未到 `purgeAt` 的房间仍可只读查看。
+15. 超过 `expireAt` 的房间只读，超过 `hiddenAt` 的房间首页不展示并从 `users.roomIds` 懒清理。
 
-当前项目只维护微信云开发路径，不再维护本地模拟服务。涉及后端行为的改动必须部署或重新上传 `scoreFunctions` 后，再在微信开发者工具中验证。
+当前项目只维护微信云开发路径，不再维护本地模拟服务。涉及 `cloudfunctions/scoreFunctions` 的后端行为改动，需要按 `docs/cloudbase-access.md` 从云函数目录部署，并用 `fn detail` 检查线上源码关键标记；仅看到 CLI 输出“部署成功”不算完成。部署验证通过后，再在微信开发者工具中验证。
 
 CloudBase CLI 访问方式、当前环境 ID、只读检查命令和部署命令记录在 `docs/cloudbase-access.md`。需要访问云端资源时，优先使用 `tcb login` 产生的本机登录态，不导出或记录长期密钥。
 

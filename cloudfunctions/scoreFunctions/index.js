@@ -7,100 +7,63 @@ cloud.init({
 const db = cloud.database();
 const _ = db.command;
 
-/**
- * 房间集合字段：
- * roomCode 房间码；name 房间名称；ownerOpenid 房主标识；ownerNickname 房主昵称；
- * memberLimit 成员上限；publicScore 公共积分；status 房间状态；
- * createdAt/updatedAt/expireAt/purgeAt/closedAt 生命周期时间；version 数据版本。
- */
-/**
- * 成员集合字段：
- * roomId 所属房间；openid 用户标识；nickname 显示昵称；
- * score 当前积分；role 成员角色；joinedAt/updatedAt/leftAt 成员时间；status 成员状态。
- */
-/**
- * 记录集合字段：
- * roomId 所属房间；operatorOpenid/operatorNickname 操作人；type 操作类型；
- * targets 影响对象；amount 分值；beforeSnapshot/afterSnapshot 前后快照；
- * remark 备注；isUndone 撤销标记；undoRecordId 撤销关联；createdAt 操作时间。
- */
-// 业务集合名称，云函数启动后会按需确保集合存在。
-const COLLECTIONS = ["rooms", "room_members", "score_records"];
+const COLLECTIONS = ["users", "rooms"];
 
-// 房间状态枚举，控制房间是否允许继续记分。
 const ROOM_STATUS = {
-  // 可加入、可记分的正常状态。
   ACTIVE: "active",
-  // 房主主动关闭后的只读状态。
   CLOSED: "closed",
-  // 超过有效期后的只读状态。
+};
+
+const VIEW_STATUS = {
   EXPIRED: "expired",
 };
 
-// 成员状态枚举，当前版本只对 active 成员开放房间能力。
 const MEMBER_STATUS = {
-  // 正常参与房间的成员。
   ACTIVE: "active",
-  // 预留的离开状态。
-  LEFT: "left",
+  PENDING: "pending",
+  REMOVED: "removed",
+  REJECTED: "rejected",
 };
 
-// 成员角色枚举，用于区分房主和普通成员权限。
 const MEMBER_ROLE = {
-  // 房间创建者，拥有完整记分管理权限。
   OWNER: "owner",
-  // 普通成员，只能查看和发起受限积分转移。
   MEMBER: "member",
 };
 
-// 操作记录类型枚举，所有积分变化和房间关键动作都会落库。
 const RECORD_TYPE = {
-  // 单个成员加分。
-  MEMBER_ADD: "member_add",
-  // 单个成员扣分。
-  MEMBER_SUBTRACT: "member_subtract",
-  // 多个成员批量加分。
-  BATCH_ADD: "batch_add",
-  // 多个成员批量扣分。
-  BATCH_SUBTRACT: "batch_subtract",
-  // 公共积分转给成员。
-  PUBLIC_TO_MEMBER: "public_to_member",
-  // 成员积分转回公共积分。
-  MEMBER_TO_PUBLIC: "member_to_public",
-  // 成员之间转移积分。
-  MEMBER_TO_MEMBER: "member_to_member",
-  // 同一来源批量转移给多个目标。
-  BATCH_TRANSFER: "batch_transfer",
-  // 撤销上一条可撤销积分记录。
-  UNDO: "undo",
-  // 创建房间记录。
   ROOM_CREATED: "room_created",
-  // 加入房间记录。
+  MEMBER_JOIN_REQUESTED: "member_join_requested",
   MEMBER_JOINED: "member_joined",
-  // 关闭房间记录。
+  MEMBER_JOIN_REJECTED: "member_join_rejected",
+  MEMBER_REMOVED: "member_removed",
+  MEMBER_ADD: "member_add",
+  MEMBER_SUBTRACT: "member_subtract",
+  BATCH_ADD: "batch_add",
+  BATCH_SUBTRACT: "batch_subtract",
+  MEMBER_TO_MEMBER: "member_to_member",
+  MEMBER_TO_PUBLIC: "member_to_public",
+  PUBLIC_TO_MEMBER: "public_to_member",
+  BATCH_TRANSFER: "batch_transfer",
+  UNDO: "undo",
   ROOM_CLOSED: "room_closed",
 };
 
-// 可撤销的积分变更类型，创建、加入和关闭房间不参与撤销。
 const UNDOABLE_TYPES = [
   RECORD_TYPE.MEMBER_ADD,
   RECORD_TYPE.MEMBER_SUBTRACT,
   RECORD_TYPE.BATCH_ADD,
   RECORD_TYPE.BATCH_SUBTRACT,
-  RECORD_TYPE.PUBLIC_TO_MEMBER,
-  RECORD_TYPE.MEMBER_TO_PUBLIC,
   RECORD_TYPE.MEMBER_TO_MEMBER,
+  RECORD_TYPE.MEMBER_TO_PUBLIC,
+  RECORD_TYPE.PUBLIC_TO_MEMBER,
   RECORD_TYPE.BATCH_TRANSFER,
 ];
 
 const ACTIVE_ROOM_DURATION_MS = 24 * 60 * 60 * 1000;
-const ROOM_DATA_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const LEGACY_EXPIRE_TO_PURGE_MS = ROOM_DATA_RETENTION_MS - ACTIVE_ROOM_DURATION_MS;
+const ROOM_VISIBLE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_RECORDS = 50;
+const MAX_TRANSACTION_RETRY = 3;
 
-// 单次清理超过保留期房间的最大数量，避免定时任务一次处理过多数据。
-const MAX_CLEANUP_LIMIT = 100;
-
-// 统一成功响应结构，前端依赖 success 字段判断调用结果。
 function success(data = {}) {
   return {
     success: true,
@@ -108,7 +71,6 @@ function success(data = {}) {
   };
 }
 
-// 统一失败响应结构，保留错误码便于前端或调试工具判断原因。
 function fail(message, code = "BAD_REQUEST") {
   return {
     success: false,
@@ -117,25 +79,24 @@ function fail(message, code = "BAD_REQUEST") {
   };
 }
 
-// 返回当前时间，统一所有写入记录的时间来源。
 function now() {
   return new Date();
 }
 
-// 清洗文本输入，避免空值和多余空白进入业务校验。
 function normalizeText(value, fallback = "") {
   return String(value || fallback).trim();
 }
 
-// 将输入转换为整数，非法输入返回 NaN 交给业务校验处理。
+function normalizeNicknameKey(value) {
+  return normalizeText(value).toLowerCase();
+}
+
 function parseInteger(value) {
   if (value === "" || value === null || value === undefined) return NaN;
   const numberValue = Number(value);
-  if (!Number.isInteger(numberValue)) return NaN;
-  return numberValue;
+  return Number.isInteger(numberValue) ? numberValue : NaN;
 }
 
-// 校验单次分值，限制为 1 到 9999 的整数。
 function parsePositiveAmount(value) {
   const amount = parseInteger(value);
   if (!Number.isInteger(amount) || amount <= 0 || amount > 9999) {
@@ -144,49 +105,450 @@ function parsePositiveAmount(value) {
   return amount;
 }
 
-function buildScoreMap(members = []) {
-  return members.reduce((map, member) => {
-    if (member && member.memberId) {
-      map[member.memberId] = Number(member.score || 0);
-    }
-    return map;
-  }, {});
+function toTime(value) {
+  if (!value) return 0;
+  if (typeof value.getTime === "function") return value.getTime();
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (value.$date) return new Date(value.$date).getTime() || 0;
+  return new Date(value).getTime() || 0;
 }
 
-function findRecordMemberTarget(record, memberId) {
-  return (record.targets || []).find(
-    (target) => target.type === "member" && target.memberId === memberId
-  );
+function isExpired(room) {
+  return !!(room && room.expireAt && toTime(room.expireAt) <= Date.now());
 }
 
-// 构造成员昵称，未填写时使用成员序号兜底。
-function buildNickname(input, fallbackIndex) {
-  const nickname = normalizeText(input);
-  if (nickname) return nickname.slice(0, 20);
-  return `成员${fallbackIndex || ""}`;
+function isHidden(room) {
+  return !!(room && room.hiddenAt && toTime(room.hiddenAt) <= Date.now());
 }
 
-// 确保核心集合存在，方便新云环境首次运行。
+function isRoomWritable(room) {
+  return room && room.status === ROOM_STATUS.ACTIVE && !isExpired(room);
+}
+
+function buildNickname(input, fallback = "我") {
+  const nickname = normalizeText(input, fallback).slice(0, 20);
+  return nickname || fallback;
+}
+
+function createId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getWxContext() {
+  return cloud.getWXContext();
+}
+
 async function ensureCollections() {
   await Promise.all(
     COLLECTIONS.map(async (name) => {
       try {
         await db.createCollection(name);
       } catch (error) {
-        // 集合已存在时忽略，保持初始化过程幂等。
+        // 集合已存在时忽略。
       }
     })
   );
 }
 
-// 获取微信调用上下文，集中读取 openid 等身份信息。
-function getWxContext() {
-  return cloud.getWXContext();
+async function ensureUser(openid, patch = {}) {
+  const current = now();
+  let existing = null;
+  try {
+    const result = await db.collection("users").doc(openid).get();
+    existing = result.data || null;
+  } catch (error) {
+    existing = null;
+  }
+
+  if (existing) {
+    const nextUser = {
+      ...existing,
+      ...patch,
+      updatedAt: current,
+    };
+    await db.collection("users").doc(openid).update({
+      data: {
+        ...patch,
+        updatedAt: current,
+      },
+    });
+    return nextUser;
+  }
+
+  const createdUser = {
+    _id: openid,
+    openid,
+    defaultName: normalizeText(patch.defaultName),
+    roomIds: Array.isArray(patch.roomIds) ? patch.roomIds : [],
+    createdAt: current,
+    updatedAt: current,
+    ...patch,
+  };
+  const { _id, ...docData } = createdUser;
+
+  try {
+    await db.collection("users").doc(openid).set({
+      data: docData,
+    });
+  } catch (setError) {
+    try {
+      await db.collection("users").add({
+        data: createdUser,
+      });
+    } catch (addError) {
+      try {
+        await db.collection("users").doc(openid).update({
+          data: {
+            ...patch,
+            updatedAt: current,
+          },
+        });
+      } catch (updateError) {
+        // 首页不能因为用户索引补写短暂失败而不可用，后续写操作会再次补偿。
+      }
+    }
+  }
+
+  return createdUser;
 }
 
-// 返回当前调用用户的微信身份信息。
+async function getUser(openid) {
+  try {
+    const result = await db.collection("users").doc(openid).get();
+    if (result.data) return result.data;
+  } catch (error) {
+    // 缺失时按新用户创建。
+  }
+  return ensureUser(openid);
+}
+
+async function addRoomIdToUser(openid, roomId) {
+  const user = await getUser(openid);
+  const roomIds = Array.isArray(user.roomIds) ? user.roomIds : [];
+  const nextRoomIds = roomIds.includes(roomId) ? roomIds : [...roomIds, roomId];
+  try {
+    await db.collection("users").doc(openid).update({
+      data: {
+        roomIds: _.addToSet(roomId),
+        updatedAt: now(),
+      },
+    });
+  } catch (error) {
+    await ensureUser(openid, { roomIds: nextRoomIds });
+  }
+}
+
+function sortMembers(members = []) {
+  return [...members].sort((a, b) => {
+    const orderDelta = Number(a.joinOrder || 0) - Number(b.joinOrder || 0);
+    if (orderDelta) return orderDelta;
+    return toTime(a.joinedAt) - toTime(b.joinedAt);
+  });
+}
+
+function sortRecords(records = [], limit = MAX_RECORDS) {
+  return [...records]
+    .sort((a, b) => {
+      const sequenceDelta = Number(b.sequence || 0) - Number(a.sequence || 0);
+      if (sequenceDelta) return sequenceDelta;
+      return toTime(b.createdAt) - toTime(a.createdAt);
+    })
+    .slice(0, limit);
+}
+
+function getActiveMembers(room) {
+  return (room.members || []).filter((member) => member.status === MEMBER_STATUS.ACTIVE);
+}
+
+function findMember(room, openid) {
+  return (room.members || []).find((member) => member.openid === openid) || null;
+}
+
+function findActiveMember(room, openid) {
+  const member = findMember(room, openid);
+  return member && member.status === MEMBER_STATUS.ACTIVE ? member : null;
+}
+
+function findMemberById(room, memberId) {
+  return findMember(room, memberId);
+}
+
+function getOperatorNickname(room, openid) {
+  const member = findMember(room, openid);
+  return (member && member.nickname) || "成员";
+}
+
+function getNextJoinOrder(room) {
+  return (room.members || []).reduce((max, member) => {
+    return Math.max(max, Number(member.joinOrder || 0));
+  }, 0) + 1;
+}
+
+function isNicknameDuplicated(room, nickname, excludeOpenid = "") {
+  const key = normalizeNicknameKey(nickname);
+  return (room.members || []).some((member) => {
+    if (member.openid === excludeOpenid) return false;
+    if (![MEMBER_STATUS.ACTIVE, MEMBER_STATUS.PENDING].includes(member.status)) return false;
+    return member.nickname === nickname || normalizeNicknameKey(member.nickname) === key;
+  });
+}
+
+function assertRoomWritable(room) {
+  if (!room) throw new Error("房间不存在");
+  if (room.status === ROOM_STATUS.CLOSED) throw new Error("房间已关闭");
+  if (!isRoomWritable(room)) throw new Error("房间已过期");
+}
+
+function assertOwner(room, openid) {
+  if (!room || room.ownerOpenid !== openid) throw new Error("只有房主可以操作");
+}
+
+function assertActiveMember(room, openid) {
+  const member = findActiveMember(room, openid);
+  if (!member) throw new Error("当前成员状态不可操作");
+  return member;
+}
+
+function assertMemberActive(member) {
+  if (!member || member.status !== MEMBER_STATUS.ACTIVE) {
+    throw new Error("成员状态不可操作");
+  }
+}
+
+function buildClientMember(member) {
+  return {
+    ...member,
+    _id: member.openid,
+    memberId: member.openid,
+  };
+}
+
+function buildClientRecord(record) {
+  const recordId = record.recordId || record._id;
+  const scoreChanges = record.scoreChanges || [];
+  const targets = (record.targets || scoreChanges).map((change) => {
+    const type = change.targetType || change.type;
+    const memberId = change.openid || change.memberId || "";
+    return {
+      type: type === "public" ? "public" : "member",
+      targetType: type === "public" ? "public" : "member",
+      openid: memberId,
+      memberId,
+      nickname: change.nickname || "",
+      delta: Number(change.delta || 0),
+      beforeScore: Number(change.beforeScore || 0),
+      afterScore: Number(change.afterScore || 0),
+    };
+  });
+  return {
+    ...record,
+    _id: recordId,
+    recordId,
+    scoreChanges,
+    targets,
+  };
+}
+
+function buildRoomView(room, openid) {
+  const members = sortMembers(room.members || []).map(buildClientMember);
+  const currentMember = members.find((member) => member.openid === openid) || null;
+  const activeMemberCount = members.filter(
+    (member) => member.status === MEMBER_STATUS.ACTIVE
+  ).length;
+  const pendingMembers = members.filter(
+    (member) => member.status === MEMBER_STATUS.PENDING
+  );
+  const viewRoom = {
+    ...room,
+    status: room.status === ROOM_STATUS.ACTIVE && isExpired(room) ? VIEW_STATUS.EXPIRED : room.status,
+    activeMemberCount,
+    pendingMemberCount: pendingMembers.length,
+  };
+  const recentRecords = sortRecords(room.records || []).map(buildClientRecord);
+  const roomView = {
+    room: viewRoom,
+    members,
+    pendingMembers,
+    recentRecords,
+    version: Number(room.version || 1),
+    sequence: Number(room.sequence || 0),
+    updatedAt: room.updatedAt,
+    schemaVersion: 3,
+  };
+  return {
+    room: viewRoom,
+    members,
+    pendingMembers,
+    recentRecords,
+    currentMember,
+    currentUserRole:
+      room.ownerOpenid === openid || (currentMember && currentMember.role === MEMBER_ROLE.OWNER)
+        ? MEMBER_ROLE.OWNER
+        : currentMember
+          ? MEMBER_ROLE.MEMBER
+          : "",
+    roomView,
+  };
+}
+
+function assertRoomVisible(room, openid) {
+  if (!room) {
+    const error = new Error("房间不存在");
+    error.code = "ROOM_NOT_FOUND";
+    throw error;
+  }
+  if (isHidden(room)) {
+    const error = new Error("房间已归档");
+    error.code = "ROOM_ARCHIVED";
+    throw error;
+  }
+  if (room.ownerOpenid === openid) return;
+  if (findMember(room, openid)) return;
+  const error = new Error("你当前不在该房间内");
+  error.code = "ROOM_ACCESS_DENIED";
+  throw error;
+}
+
+async function getRoomById(roomId) {
+  if (!roomId) return null;
+  try {
+    const result = await db.collection("rooms").doc(roomId).get();
+    return result.data || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function findRoomByCodeOrId({ roomId, roomCode }) {
+  const directRoomId = normalizeText(roomId);
+  if (directRoomId) return getRoomById(directRoomId);
+  const code = normalizeText(roomCode).toUpperCase();
+  if (!code) return null;
+  const result = await db.collection("rooms").where({ roomCode: code }).limit(1).get();
+  return (result.data || [])[0] || null;
+}
+
+async function generateRoomCode() {
+  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    let code = "";
+    for (let index = 0; index < 6; index += 1) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    const existing = await getRoomById(code);
+    if (!existing) return code;
+  }
+  throw new Error("房间码生成失败，请重试");
+}
+
+function applyScoreChanges(room, scoreChanges) {
+  const members = [...(room.members || [])];
+  const nextRoom = {
+    ...room,
+    members,
+    publicScore: Number(room.publicScore || 0),
+  };
+  scoreChanges.forEach((change) => {
+    const delta = Number(change.delta || 0);
+    if (change.targetType === "public") {
+      nextRoom.publicScore += delta;
+      return;
+    }
+    const index = members.findIndex((member) => member.openid === change.openid);
+    if (index < 0) throw new Error("成员不存在");
+    assertMemberActive(members[index]);
+    members[index] = {
+      ...members[index],
+      score: Number(members[index].score || 0) + delta,
+      updatedAt: now(),
+    };
+  });
+  return nextRoom;
+}
+
+function buildRecord(room, openid, type, amount, scoreChanges, extra = {}) {
+  const sequence = Number(room.sequence || 0) + 1;
+  const recordId = createId("rec");
+  const changesWithSnapshot = scoreChanges.map((change) => {
+    if (change.targetType === "public") {
+      const beforeScore = Number(room.publicScore || 0);
+      return {
+        ...change,
+        beforeScore,
+        afterScore: beforeScore + Number(change.delta || 0),
+      };
+    }
+    const member = findMember(room, change.openid);
+    const beforeScore = Number((member && member.score) || 0);
+    return {
+      ...change,
+      nickname: change.nickname || (member && member.nickname) || "成员",
+      beforeScore,
+      afterScore: beforeScore + Number(change.delta || 0),
+    };
+  });
+  return {
+    recordId,
+    _id: recordId,
+    sequence,
+    type,
+    operatorOpenid: openid,
+    operatorNickname: getOperatorNickname(room, openid),
+    amount: Number(amount || 0),
+    scoreChanges: changesWithSnapshot,
+    targets: changesWithSnapshot.map((change) => ({
+      type: change.targetType,
+      targetType: change.targetType,
+      openid: change.openid || "",
+      memberId: change.openid || "",
+      nickname: change.nickname || "",
+      delta: Number(change.delta || 0),
+      beforeScore: Number(change.beforeScore || 0),
+      afterScore: Number(change.afterScore || 0),
+    })),
+    isUndone: false,
+    undoOfRecordId: "",
+    undoneByRecordId: "",
+    createdAt: now(),
+    ...extra,
+  };
+}
+
+function appendRecord(room, record) {
+  const records = sortRecords([record, ...(room.records || [])], MAX_RECORDS);
+  return {
+    ...room,
+    sequence: record.sequence,
+    records,
+    updatedAt: now(),
+    version: Number(room.version || 1) + 1,
+  };
+}
+
+async function saveRoom(transaction, room) {
+  const { _id, ...data } = room;
+  await transaction.collection("rooms").doc(room._id).set({
+    data,
+  });
+}
+
+async function runRoomTransaction(handler) {
+  let lastError = null;
+  for (let attempt = 0; attempt < MAX_TRANSACTION_RETRY; attempt += 1) {
+    try {
+      return await db.runTransaction(handler);
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_TRANSACTION_RETRY - 1) break;
+    }
+  }
+  throw lastError;
+}
+
 async function getOpenId() {
   const wxContext = getWxContext();
+  await ensureCollections();
+  await getUser(wxContext.OPENID);
   return success({
     openid: wxContext.OPENID,
     appid: wxContext.APPID,
@@ -194,69 +556,101 @@ async function getOpenId() {
   });
 }
 
-// 按房间 ID 或房间码查找房间，支持分享和手动输入两种入口。
-async function findRoomByCodeOrId({ roomId, roomCode }) {
-  if (roomId) {
-    const roomResult = await db.collection("rooms").doc(roomId).get();
-    return roomResult.data || null;
+async function getHomeData() {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const user = await getUser(openid);
+  const roomIds = Array.isArray(user.roomIds) ? user.roomIds : [];
+  const rooms = [];
+  const keptRoomIds = [];
+
+  for (const roomId of roomIds) {
+    const room = await getRoomById(roomId);
+    if (!room || isHidden(room)) continue;
+    const member = findMember(room, openid);
+    if (!member && room.ownerOpenid !== openid) continue;
+    keptRoomIds.push(roomId);
+    rooms.push({
+      roomId: room._id,
+      roomCode: room.roomCode,
+      name: room.name,
+      status: room.status === ROOM_STATUS.ACTIVE && isExpired(room) ? VIEW_STATUS.EXPIRED : room.status,
+      memberStatus: member ? member.status : MEMBER_STATUS.ACTIVE,
+      activeMemberCount: getActiveMembers(room).length,
+      memberLimit: room.memberLimit,
+      updatedAt: room.updatedAt,
+    });
   }
 
-  const code = normalizeText(roomCode).toUpperCase();
-  if (!code) return null;
-  const roomResult = await db
-    .collection("rooms")
-    .where({ roomCode: code })
-    .limit(1)
-    .get();
-  return roomResult.data[0] || null;
+  if (keptRoomIds.length !== roomIds.length) {
+    await db.collection("users").doc(openid).update({
+      data: {
+        roomIds: keptRoomIds,
+        updatedAt: now(),
+      },
+    });
+  }
+
+  rooms.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+  return success({
+    user: {
+      ...user,
+      roomIds: keptRoomIds,
+    },
+    rooms,
+  });
 }
 
-// 判断房间是否已经超过有效期。
-function isExpired(room) {
-  return room.expireAt && new Date(room.expireAt).getTime() <= Date.now();
+async function saveDefaultName(event) {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const defaultName = buildNickname(event.defaultName, "我");
+  await ensureUser(openid, { defaultName });
+  return success({
+    defaultName,
+  });
 }
 
-// 房间过期时即时标记为 expired，避免继续发生记分操作。
-async function markExpiredIfNeeded(room) {
-  if (!room || room.status !== ROOM_STATUS.ACTIVE || !isExpired(room)) return room;
-  await db.collection("rooms").doc(room._id).update({
-    data: {
-      status: ROOM_STATUS.EXPIRED,
-      updatedAt: now(),
+async function getRoom(event) {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const roomId = normalizeText(event.roomId);
+  const room = await getRoomById(roomId);
+  assertRoomVisible(room, openid);
+  return success(buildRoomView(room, openid));
+}
+
+async function getRoomPreview(event) {
+  await ensureCollections();
+  const room = await findRoomByCodeOrId(event);
+  if (!room) return fail("房间不存在", "ROOM_NOT_FOUND");
+  if (isHidden(room)) return fail("房间已归档", "ROOM_ARCHIVED");
+  return success({
+    room: {
+      _id: room._id,
+      roomId: room._id,
+      roomCode: room.roomCode,
+      name: room.name,
+      status: room.status === ROOM_STATUS.ACTIVE && isExpired(room) ? VIEW_STATUS.EXPIRED : room.status,
+      activeMemberCount: getActiveMembers(room).length,
+      memberLimit: room.memberLimit,
+      requireApproval: !!room.requireApproval,
+      expireAt: room.expireAt,
+      hiddenAt: room.hiddenAt,
     },
   });
-  return {
-    ...room,
-    status: ROOM_STATUS.EXPIRED,
-  };
 }
 
-// 生成不易混淆的 6 位房间码，并检查唯一性。
-async function generateRoomCode() {
-  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    let code = "";
-    for (let i = 0; i < 6; i += 1) {
-      code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-    const existing = await db
-      .collection("rooms")
-      .where({ roomCode: code })
-      .count();
-    if (!existing.total) return code;
-  }
-  throw new Error("房间码生成失败，请重试");
-}
-
-// 创建房间，同时创建房主成员记录和创建房间操作记录。
 async function createRoom(event) {
   await ensureCollections();
+  const openid = getWxContext().OPENID;
+  await getUser(openid);
 
-  const wxContext = getWxContext();
   const name = normalizeText(event.name);
   const memberLimit = parseInteger(event.memberLimit || 12);
   const publicScore = parseInteger(event.publicScore || 0);
-  const ownerNickname = buildNickname(event.nickname, 1);
+  const ownerNickname = buildNickname(event.nickname, "我");
+  const requireApproval = !!event.requireApproval;
 
   if (!name) return fail("房间名称不能为空");
   if (name.length > 20) return fail("房间名称最多 20 个字符");
@@ -266,1274 +660,574 @@ async function createRoom(event) {
   if (!Number.isInteger(publicScore)) return fail("公共积分必须是整数");
 
   try {
-    const createdAt = now();
-    const expireAt = new Date(createdAt.getTime() + ACTIVE_ROOM_DURATION_MS);
-    const purgeAt = new Date(createdAt.getTime() + ROOM_DATA_RETENTION_MS);
     const roomCode = await generateRoomCode();
-    const roomResult = await db.collection("rooms").add({
-      data: {
+    const current = now();
+    let createdRoom = null;
+    await runRoomTransaction(async (transaction) => {
+      const roomId = roomCode;
+      const owner = {
+        openid,
+        nickname: ownerNickname,
+        role: MEMBER_ROLE.OWNER,
+        status: MEMBER_STATUS.ACTIVE,
+        score: 0,
+        joinOrder: 1,
+        nicknameEdited: false,
+        joinedAt: current,
+        updatedAt: current,
+        leftAt: null,
+      };
+      const baseRoom = {
+        _id: roomId,
         roomCode,
         name,
-        ownerOpenid: wxContext.OPENID,
-        ownerNickname,
+        ownerOpenid: openid,
         memberLimit,
-        publicScore,
+        requireApproval,
         status: ROOM_STATUS.ACTIVE,
-        createdAt,
-        updatedAt: createdAt,
-        expireAt,
-        purgeAt,
+        publicScore,
+        sequence: 0,
+        members: [owner],
+        records: [],
+        createdAt: current,
+        updatedAt: current,
+        expireAt: new Date(current.getTime() + ACTIVE_ROOM_DURATION_MS),
+        hiddenAt: new Date(current.getTime() + ROOM_VISIBLE_DURATION_MS),
         closedAt: null,
-        memberOpenids: [wxContext.OPENID],
         version: 1,
-      },
+      };
+      const record = buildRecord(baseRoom, openid, RECORD_TYPE.ROOM_CREATED, 0, []);
+      const room = appendRecord(baseRoom, record);
+      await saveRoom(transaction, room);
+      createdRoom = room;
     });
-
-    const roomId = roomResult._id;
-    const memberResult = await db.collection("room_members").add({
-      data: {
-        roomId,
-        openid: wxContext.OPENID,
-        nickname: ownerNickname,
-        score: 0,
-        role: MEMBER_ROLE.OWNER,
-        joinedAt: createdAt,
-        updatedAt: createdAt,
-        leftAt: null,
-        nicknameEdited: false,
-        status: MEMBER_STATUS.ACTIVE,
-      },
-    });
-
-    const recordData = {
-      roomId,
-      operatorOpenid: wxContext.OPENID,
-      operatorNickname: ownerNickname,
-      type: RECORD_TYPE.ROOM_CREATED,
-      targets: [{ type: "room", roomId, name }],
-      amount: 0,
-      beforeSnapshot: {},
-      afterSnapshot: {
-        room: { publicScore },
-        members: [{ memberId: memberResult._id, score: 0 }],
-      },
-      remark: "创建房间",
-      isUndone: false,
-      undoRecordId: null,
-      createdAt,
-    };
-    await db.collection("score_records").add({ data: recordData });
-
+    await addRoomIdToUser(openid, createdRoom._id);
     return success({
-      roomId,
-      roomCode,
-      memberId: memberResult._id,
+      roomId: createdRoom._id,
+      roomCode: createdRoom.roomCode,
+      roomView: buildRoomView(createdRoom, openid).roomView,
     });
   } catch (error) {
     return fail(error.message || "创建房间失败");
   }
 }
 
-// 加入房间，重复加入时返回已有成员，不重复占用名额。
 async function joinRoom(event) {
   await ensureCollections();
+  const openid = getWxContext().OPENID;
+  await getUser(openid);
+  const nickname = buildNickname(event.nickname, "我");
 
-  const wxContext = getWxContext();
-  const room = await markExpiredIfNeeded(
-    await findRoomByCodeOrId({
-      roomId: normalizeText(event.roomId),
-      roomCode: normalizeText(event.roomCode),
-    })
-  );
+  try {
+    const room = await findRoomByCodeOrId(event);
+    if (!room) return fail("房间不存在", "ROOM_NOT_FOUND");
+    let nextRoom = null;
+    let pending = false;
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(room._id).get();
+      const currentRoom = roomResult.data;
+      assertRoomWritable(currentRoom);
+      if (isHidden(currentRoom)) throw new Error("房间已归档");
 
-  if (!room) return fail("房间不存在", "ROOM_NOT_FOUND");
-  if (room.status === ROOM_STATUS.CLOSED) return fail("房间已关闭", "ROOM_CLOSED");
-  if (room.status !== ROOM_STATUS.ACTIVE) return fail("房间已过期", "ROOM_EXPIRED");
+      const members = [...(currentRoom.members || [])];
+      const existingIndex = members.findIndex((member) => member.openid === openid);
+      if (existingIndex >= 0) {
+        const existing = members[existingIndex];
+        if (existing.status === MEMBER_STATUS.REMOVED) throw new Error("你已被移出该房间");
+        if (existing.status === MEMBER_STATUS.REJECTED) throw new Error("申请未通过，无法继续加入");
+        nextRoom = currentRoom;
+        pending = existing.status === MEMBER_STATUS.PENDING;
+        return;
+      }
 
-  const existing = await db
-    .collection("room_members")
-    .where({
-      roomId: room._id,
-      openid: wxContext.OPENID,
-      status: MEMBER_STATUS.ACTIVE,
-    })
-    .limit(1)
-    .get();
+      if (isNicknameDuplicated(currentRoom, nickname)) throw new Error("房间内已有同名成员");
+      if (getActiveMembers(currentRoom).length >= Number(currentRoom.memberLimit || 12)) {
+        throw new Error("房间人数已满");
+      }
 
-  if (existing.data.length) {
+      const status = currentRoom.requireApproval
+        ? MEMBER_STATUS.PENDING
+        : MEMBER_STATUS.ACTIVE;
+      pending = status === MEMBER_STATUS.PENDING;
+      const member = {
+        openid,
+        nickname,
+        role: MEMBER_ROLE.MEMBER,
+        status,
+        score: 0,
+        joinOrder: getNextJoinOrder(currentRoom),
+        nicknameEdited: false,
+        joinedAt: now(),
+        updatedAt: now(),
+        leftAt: null,
+      };
+      const roomWithMember = {
+        ...currentRoom,
+        members: [...members, member],
+      };
+      const record = buildRecord(
+        roomWithMember,
+        openid,
+        pending ? RECORD_TYPE.MEMBER_JOIN_REQUESTED : RECORD_TYPE.MEMBER_JOINED,
+        0,
+        []
+      );
+      nextRoom = appendRecord(roomWithMember, record);
+      await saveRoom(transaction, nextRoom);
+    });
+    await addRoomIdToUser(openid, room._id);
     return success({
       roomId: room._id,
       roomCode: room.roomCode,
-      member: existing.data[0],
-      alreadyJoined: true,
+      pending,
+      roomView: buildRoomView(nextRoom || room, openid).roomView,
     });
-  }
-
-  const activeCount = await db
-    .collection("room_members")
-    .where({
-      roomId: room._id,
-      status: MEMBER_STATUS.ACTIVE,
-    })
-    .count();
-
-  if (activeCount.total >= room.memberLimit) {
-    return fail("房间人数已满", "ROOM_FULL");
-  }
-
-  const joinedAt = now();
-  const nickname = buildNickname(event.nickname, activeCount.total + 1);
-  const nextMemberOpenids = [
-    ...new Set(
-      [
-        ...(Array.isArray(room.memberOpenids) ? room.memberOpenids : []),
-        room.ownerOpenid,
-        wxContext.OPENID,
-      ].filter(Boolean)
-    ),
-  ];
-  const memberResult = await db.collection("room_members").add({
-    data: {
-      roomId: room._id,
-      openid: wxContext.OPENID,
-      nickname,
-      score: 0,
-      role: MEMBER_ROLE.MEMBER,
-      joinedAt,
-      updatedAt: joinedAt,
-      leftAt: null,
-      nicknameEdited: false,
-      status: MEMBER_STATUS.ACTIVE,
-    },
-  });
-
-  await db.collection("rooms").doc(room._id).update({
-    data: {
-      updatedAt: joinedAt,
-      memberOpenids: nextMemberOpenids,
-      version: _.inc(1),
-    },
-  });
-  const recordData = {
-    roomId: room._id,
-    operatorOpenid: wxContext.OPENID,
-    operatorNickname: nickname,
-    type: RECORD_TYPE.MEMBER_JOINED,
-    targets: [{ type: "member", memberId: memberResult._id, nickname }],
-    amount: 0,
-    beforeSnapshot: {},
-    afterSnapshot: { members: [{ memberId: memberResult._id, score: 0 }] },
-    remark: "加入房间",
-    isUndone: false,
-    undoRecordId: null,
-    createdAt: joinedAt,
-  };
-  await db.collection("score_records").add({ data: recordData });
-
-  return success({
-    roomId: room._id,
-    roomCode: room.roomCode,
-    memberId: memberResult._id,
-    alreadyJoined: false,
-  });
-}
-
-// 获取房间详情、成员列表、最近记录和当前用户角色。
-async function getRoom(event) {
-  await ensureCollections();
-
-  const wxContext = getWxContext();
-  const roomId = normalizeText(event.roomId);
-  if (!roomId) return fail("缺少房间 ID");
-
-  let room;
-  try {
-    const roomResult = await db.collection("rooms").doc(roomId).get();
-    room = await markExpiredIfNeeded(roomResult.data);
   } catch (error) {
-    return fail("房间不存在", "ROOM_NOT_FOUND");
+    return fail(error.message || "加入房间失败");
   }
-
-  const [membersResult, recordsResult] = await Promise.all([
-    db
-      .collection("room_members")
-      .where({
-        roomId,
-        status: MEMBER_STATUS.ACTIVE,
-      })
-      .get(),
-    db
-      .collection("score_records")
-      .where({ roomId })
-      .orderBy("createdAt", "desc")
-      .limit(50)
-      .get(),
-  ]);
-
-  const currentMember = membersResult.data.find(
-    (member) => member.openid === wxContext.OPENID
-  );
-  const currentUserRole = currentMember
-    ? currentMember.role
-    : room.ownerOpenid === wxContext.OPENID
-      ? MEMBER_ROLE.OWNER
-      : "";
-
-  const members = membersResult.data.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
-  });
-  const activeOpenids = [...new Set(members.map((member) => member.openid).filter(Boolean))];
-  const knownOpenids = Array.isArray(room.memberOpenids) ? room.memberOpenids : [];
-  const shouldSyncMemberOpenids =
-    activeOpenids.length !== knownOpenids.length ||
-    activeOpenids.some((openid) => !knownOpenids.includes(openid));
-  if (shouldSyncMemberOpenids) {
-    await db.collection("rooms").doc(roomId).update({
-      data: {
-        memberOpenids: activeOpenids,
-        updatedAt: now(),
-        version: _.inc(1),
-      },
-    });
-    room.memberOpenids = activeOpenids;
-  }
-
-  return success({
-    room,
-    members,
-    recentRecords: recordsResult.data,
-    currentUserRole,
-    currentMember,
-  });
 }
 
 async function updateNickname(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
-  const nickname = normalizeText(event.nickname);
-
-  if (!roomId) return fail("缺少房间 ID");
-  if (!nickname) return fail("昵称不能为空");
-  if (nickname.length > 20) return fail("昵称最多 20 个字符");
-
+  const nickname = buildNickname(event.nickname, "我");
   try {
-    const { room, currentMember } = await getActiveRoomForParticipant(
-      roomId,
-      wxContext.OPENID
-    );
-    if (!currentMember) throw new Error("请先加入房间");
-    if (currentMember.nicknameEdited) throw new Error("改名机会已使用");
-
-    await db.runTransaction(async (transaction) => {
-      const memberResult = await transaction
-        .collection("room_members")
-        .doc(currentMember._id)
-        .get();
-      const member = memberResult.data;
-      if (
-        !member ||
-        member.roomId !== roomId ||
-        member.openid !== wxContext.OPENID ||
-        member.status !== MEMBER_STATUS.ACTIVE
-      ) {
-        throw new Error("请先加入房间");
-      }
-      if (member.nicknameEdited) throw new Error("改名机会已使用");
-
-      const updatedAt = now();
-      await transaction.collection("room_members").doc(currentMember._id).update({
-        data: {
-          nickname,
-          nicknameEdited: true,
-          updatedAt,
-        },
-      });
-
-      const roomUpdate = { updatedAt, version: _.inc(1) };
-      if (member.role === MEMBER_ROLE.OWNER || room.ownerOpenid === wxContext.OPENID) {
-        roomUpdate.ownerNickname = nickname;
-      }
-      await transaction.collection("rooms").doc(roomId).update({
-        data: roomUpdate,
-      });
+    let nextRoom = null;
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      const members = [...(room.members || [])];
+      const index = members.findIndex((member) => member.openid === openid);
+      const member = members[index];
+      assertMemberActive(member);
+      if (member.nicknameEdited) throw new Error("昵称只能修改一次");
+      if (isNicknameDuplicated(room, nickname, openid)) throw new Error("房间内已有同名成员");
+      members[index] = {
+        ...member,
+        nickname,
+        nicknameEdited: true,
+        updatedAt: now(),
+      };
+      nextRoom = {
+        ...room,
+        members,
+        updatedAt: now(),
+        version: Number(room.version || 1) + 1,
+      };
+      await saveRoom(transaction, nextRoom);
     });
-
-    return success({
-      memberId: currentMember._id,
-      nickname,
-      nicknameEdited: true,
-    });
+    return success({ roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
     return fail(error.message || "修改昵称失败");
   }
 }
 
-// 获取可操作房间并校验房主权限。
-async function getActiveRoomForOwner(roomId, openid) {
-  const roomResult = await db.collection("rooms").doc(roomId).get();
-  const room = await markExpiredIfNeeded(roomResult.data);
-
-  if (!room) throw new Error("房间不存在");
-  if (room.ownerOpenid !== openid) throw new Error("只有房主可以操作");
-  if (room.status === ROOM_STATUS.CLOSED) throw new Error("房间已关闭");
-  if (room.status !== ROOM_STATUS.ACTIVE) throw new Error("房间已过期");
-
-  return room;
-}
-
-// 获取可操作房间并校验调用者是否为房主或当前房间成员。
-async function getActiveRoomForParticipant(roomId, openid) {
-  const roomResult = await db.collection("rooms").doc(roomId).get();
-  const room = await markExpiredIfNeeded(roomResult.data);
-
-  if (!room) throw new Error("房间不存在");
-  if (room.status === ROOM_STATUS.CLOSED) throw new Error("房间已关闭");
-  if (room.status !== ROOM_STATUS.ACTIVE) throw new Error("房间已过期");
-
-  const memberResult = await db
-    .collection("room_members")
-    .where({
-      roomId,
-      openid,
-      status: MEMBER_STATUS.ACTIVE,
-    })
-    .limit(1)
-    .get();
-  const currentMember = memberResult.data[0] || null;
-  const isOwner = room.ownerOpenid === openid;
-
-  if (!isOwner && !currentMember) throw new Error("请先加入房间");
-
-  return { room, currentMember, isOwner };
-}
-
-// 查询操作人昵称，记录展示时优先使用房间内昵称。
-async function getOperatorNickname(roomId, openid, fallback) {
-  const result = await db
-    .collection("room_members")
-    .where({
-      roomId,
-      openid,
-      status: MEMBER_STATUS.ACTIVE,
-    })
-    .limit(1)
-    .get();
-  return (result.data[0] && result.data[0].nickname) || fallback || "房主";
-}
-
-// 房主为单个成员加分或扣分，事务内同步写入积分记录。
 async function updateScore(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
   const memberId = normalizeText(event.memberId);
   const action = normalizeText(event.action);
-
   try {
     const amount = parsePositiveAmount(event.amount);
-    const delta = action === "subtract" ? -amount : amount;
-    const recordType =
-      action === "subtract" ? RECORD_TYPE.MEMBER_SUBTRACT : RECORD_TYPE.MEMBER_ADD;
-    const room = await getActiveRoomForOwner(roomId, wxContext.OPENID);
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-
-    await db.runTransaction(async (transaction) => {
-      const memberResult = await transaction
-        .collection("room_members")
-        .doc(memberId)
-        .get();
-      const member = memberResult.data;
-      if (
-        !member ||
-        member.roomId !== roomId ||
-        member.status !== MEMBER_STATUS.ACTIVE
-      ) {
-        throw new Error("成员不存在");
-      }
-
-      const beforeScore = member.score || 0;
-      const afterScore = beforeScore + delta;
-      const changedAt = now();
-      await transaction.collection("room_members").doc(memberId).update({
-        data: {
-          score: afterScore,
-          updatedAt: changedAt,
+    if (action !== "add" && action !== "subtract") throw new Error("操作类型不正确");
+    let nextRoom = null;
+    let recordId = "";
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      const member = findMemberById(room, memberId);
+      assertMemberActive(member);
+      const delta = action === "subtract" ? -amount : amount;
+      const scoreChanges = [
+        {
+          targetType: "member",
+          openid: member.openid,
+          nickname: member.nickname,
+          delta,
         },
-      });
-      await transaction.collection("rooms").doc(roomId).update({
-        data: { updatedAt: changedAt, version: _.inc(1) },
-      });
-      const recordData = {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: recordType,
-        targets: [
-          {
-            type: "member",
-            memberId,
-            nickname: member.nickname,
-            beforeScore,
-            afterScore,
-          },
-        ],
+      ];
+      const record = buildRecord(
+        room,
+        openid,
+        delta > 0 ? RECORD_TYPE.MEMBER_ADD : RECORD_TYPE.MEMBER_SUBTRACT,
         amount,
-        beforeSnapshot: {
-          members: [{ memberId, score: beforeScore }],
-        },
-        afterSnapshot: {
-          members: [{ memberId, score: afterScore }],
-        },
-        remark: action === "subtract" ? "成员扣分" : "成员加分",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt: changedAt,
-      };
-      await transaction.collection("score_records").add({
-        data: recordData,
-      });
+        scoreChanges
+      );
+      recordId = record.recordId;
+      nextRoom = appendRecord(applyScoreChanges(room, scoreChanges), record);
+      await saveRoom(transaction, nextRoom);
     });
-
-    return success();
+    return success({ recordId, roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
-    return fail(error.message || "积分操作失败");
+    return fail(error.message || "更新积分失败");
   }
 }
 
-// 房主批量调整成员积分，事务内逐个更新并写入一条批量记录。
 async function batchUpdateScore(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
   const action = normalizeText(event.action);
-  const memberIds = Array.isArray(event.memberIds)
-    ? [...new Set(event.memberIds.map((id) => normalizeText(id)).filter(Boolean))]
-    : [];
-
+  const memberIds = Array.isArray(event.memberIds) ? event.memberIds.map(normalizeText) : [];
   try {
     const amount = parsePositiveAmount(event.amount);
-    if (!memberIds.length) throw new Error("至少选择 1 名成员");
-    const delta = action === "subtract" ? -amount : amount;
-    const recordType =
-      action === "subtract" ? RECORD_TYPE.BATCH_SUBTRACT : RECORD_TYPE.BATCH_ADD;
-    const room = await getActiveRoomForOwner(roomId, wxContext.OPENID);
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-
-    await db.runTransaction(async (transaction) => {
-      const membersResult = await transaction
-        .collection("room_members")
-        .where({
-          _id: _.in(memberIds),
-          roomId,
-          status: MEMBER_STATUS.ACTIVE,
-        })
-        .get();
-      if (membersResult.data.length !== memberIds.length) {
-        throw new Error("部分成员不存在");
-      }
-
-      const changedAt = now();
-      const beforeMembers = [];
-      const afterMembers = [];
-      const targets = [];
-
-      for (const member of membersResult.data) {
-        const beforeScore = member.score || 0;
-        const afterScore = beforeScore + delta;
-        beforeMembers.push({ memberId: member._id, score: beforeScore });
-        afterMembers.push({ memberId: member._id, score: afterScore });
-        targets.push({
-          type: "member",
-          memberId: member._id,
+    if (!memberIds.length) throw new Error("请选择成员");
+    if (action !== "add" && action !== "subtract") throw new Error("操作类型不正确");
+    let nextRoom = null;
+    let recordId = "";
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      const delta = action === "subtract" ? -amount : amount;
+      const uniqueMemberIds = [...new Set(memberIds)];
+      const scoreChanges = uniqueMemberIds.map((memberId) => {
+        const member = findMemberById(room, memberId);
+        assertMemberActive(member);
+        return {
+          targetType: "member",
+          openid: member.openid,
           nickname: member.nickname,
-          beforeScore,
-          afterScore,
-        });
-        await transaction.collection("room_members").doc(member._id).update({
-          data: {
-            score: afterScore,
-            updatedAt: changedAt,
-          },
-        });
-      }
-
-      await transaction.collection("rooms").doc(roomId).update({
-        data: { updatedAt: changedAt, version: _.inc(1) },
+          delta,
+        };
       });
-      const recordData = {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: recordType,
-        targets,
+      const record = buildRecord(
+        room,
+        openid,
+        delta > 0 ? RECORD_TYPE.BATCH_ADD : RECORD_TYPE.BATCH_SUBTRACT,
         amount,
-        beforeSnapshot: { members: beforeMembers },
-        afterSnapshot: { members: afterMembers },
-        remark: action === "subtract" ? "批量扣分" : "批量加分",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt: changedAt,
-      };
-      await transaction.collection("score_records").add({
-        data: recordData,
-      });
+        scoreChanges
+      );
+      recordId = record.recordId;
+      nextRoom = appendRecord(applyScoreChanges(room, scoreChanges), record);
+      await saveRoom(transaction, nextRoom);
     });
-
-    return success();
+    return success({ recordId, roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
-    return fail(error.message || "批量操作失败");
+    return fail(error.message || "批量记分失败");
   }
 }
 
-// 根据转出和转入对象类型确定积分转移记录类型。
-function getTransferType(fromType, toType) {
-  if (fromType === "public" && toType === "member") return RECORD_TYPE.PUBLIC_TO_MEMBER;
-  if (fromType === "member" && toType === "public") return RECORD_TYPE.MEMBER_TO_PUBLIC;
-  if (fromType === "member" && toType === "member") return RECORD_TYPE.MEMBER_TO_MEMBER;
-  throw new Error("暂不支持该转移方式");
-}
+function buildTransferScoreChanges(room, fromType, fromMemberId, targets, amount) {
+  if (fromType !== "public" && fromType !== "member") throw new Error("转出来源不正确");
+  if (!Array.isArray(targets) || !targets.length) throw new Error("请选择转入目标");
 
-function getBatchTransferType(fromType, targets) {
-  if (targets.length === 1) return getTransferType(fromType, targets[0].toType);
-  return RECORD_TYPE.BATCH_TRANSFER;
-}
+  const changesByKey = {};
+  const addChange = (targetType, openid, delta) => {
+    const key = targetType === "public" ? "public" : `member:${openid}`;
+    const member = targetType === "member" ? findMemberById(room, openid) : null;
+    if (targetType === "member") assertMemberActive(member);
+    if (!changesByKey[key]) {
+      changesByKey[key] = {
+        targetType,
+        openid: targetType === "member" ? openid : "",
+        nickname: member ? member.nickname : "",
+        delta: 0,
+      };
+    }
+    changesByKey[key].delta += delta;
+  };
 
-function normalizeTransferTargets(value) {
-  if (!Array.isArray(value) || !value.length) throw new Error("请选择转入目标");
-
-  const seen = {};
-  return value.map((item) => {
-    const toType = normalizeText(item.toType);
-    const toMemberId = normalizeText(item.toMemberId);
+  const seenTargets = {};
+  targets.forEach((target) => {
+    const toType = target.toType;
+    const toMemberId = normalizeText(target.toMemberId);
     if (toType !== "public" && toType !== "member") throw new Error("转入目标不正确");
     if (toType === "member" && !toMemberId) throw new Error("转入成员不能为空");
+    if (fromType === "public" && toType === "public") throw new Error("来源和目标不能相同");
+    if (fromType === "member" && toType === "member" && fromMemberId === toMemberId) {
+      throw new Error("转出和转入成员不能相同");
+    }
     const key = `${toType}:${toMemberId || "public"}`;
-    if (seen[key]) throw new Error("转入目标重复");
-    seen[key] = true;
-    return { toType, toMemberId };
+    if (seenTargets[key]) throw new Error("转入目标重复");
+    seenTargets[key] = true;
   });
-}
 
-function assertTransferTarget(fromType, fromMemberId, target) {
-  const { toType, toMemberId } = target;
-  if (fromType === "public" && toType === "public") throw new Error("来源和目标不能相同");
-  if (fromType === "member" && toType === "member" && fromMemberId === toMemberId) {
-    throw new Error("转出和转入成员不能相同");
+  if (fromType === "public") {
+    addChange("public", "", -amount * targets.length);
+  } else {
+    const fromMember = findMemberById(room, fromMemberId);
+    assertMemberActive(fromMember);
+    addChange("member", fromMember.openid, -amount * targets.length);
   }
-  getTransferType(fromType, toType);
-}
 
-// 校验积分转移权限，普通成员只能转出自己或从公共积分转给自己。
-function assertTransferPermission({ isOwner, currentMember, fromType, fromMemberId, toType, toMemberId }) {
-  if (isOwner) return;
-
-  if (!currentMember) throw new Error("请先加入房间");
-
-  const currentMemberId = currentMember._id;
-  if (fromType === "member") {
-    if (fromMemberId !== currentMemberId) {
-      throw new Error("成员只能转出自己的积分");
+  targets.forEach((target) => {
+    if (target.toType === "public") {
+      addChange("public", "", amount);
+      return;
     }
-    return;
-  }
+    const toMember = findMemberById(room, normalizeText(target.toMemberId));
+    assertMemberActive(toMember);
+    addChange("member", toMember.openid, amount);
+  });
 
-  if (fromType === "public" && toType === "member") {
-    if (toMemberId !== currentMemberId) {
-      throw new Error("成员只能从公共积分池转给自己");
-    }
-    return;
-  }
-
-  throw new Error("成员只能转移自己的积分或从公共积分池转给自己");
+  return Object.values(changesByKey).filter((change) => change.delta !== 0);
 }
 
-function assertBatchTransferPermission({ isOwner, currentMember, fromType, fromMemberId, targets }) {
-  if (isOwner) return;
-
-  if (!currentMember) throw new Error("请先加入房间");
-
-  const currentMemberId = currentMember._id;
-  if (fromType === "member") {
-    if (fromMemberId !== currentMemberId) throw new Error("成员只能转出自己的积分");
-    return;
+function assertTransferPermission(room, openid, fromType, fromMemberId, targets) {
+  if (room.ownerOpenid === openid) return;
+  const currentMember = assertActiveMember(room, openid);
+  if (fromType === "member" && fromMemberId !== currentMember.openid) {
+    throw new Error("成员只能转出自己的积分");
   }
-
-  if (
-    fromType === "public" &&
-    targets.length === 1 &&
-    targets[0].toType === "member" &&
-    targets[0].toMemberId === currentMemberId
-  ) {
-    return;
-  }
-
-  throw new Error("成员只能转移自己的积分或从公共积分池转给自己");
-}
-
-// 执行公共积分与成员、成员与成员之间的积分转移。
-async function transferScore(event) {
-  await ensureCollections();
-
-  const wxContext = getWxContext();
-  const roomId = normalizeText(event.roomId);
-  const fromType = normalizeText(event.fromType);
-  const toType = normalizeText(event.toType);
-  const fromMemberId = normalizeText(event.fromMemberId);
-  const toMemberId = normalizeText(event.toMemberId);
-
-  try {
-    const amount = parsePositiveAmount(event.amount);
-    if (fromType === toType && fromMemberId && fromMemberId === toMemberId) {
-      throw new Error("来源和目标不能相同");
-    }
-    const recordType = getTransferType(fromType, toType);
-    const { room, currentMember, isOwner } = await getActiveRoomForParticipant(
-      roomId,
-      wxContext.OPENID
-    );
-    assertTransferPermission({
-      isOwner,
-      currentMember,
-      fromType,
-      fromMemberId,
-      toType,
-      toMemberId,
-    });
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-
-    await db.runTransaction(async (transaction) => {
-      const changedAt = now();
-      const targets = [];
-      const beforeSnapshot = {};
-      const afterSnapshot = {};
-      const memberIds = [fromMemberId, toMemberId].filter(Boolean);
-      const memberMap = {};
-
-      if (memberIds.length) {
-        const membersResult = await transaction
-          .collection("room_members")
-          .where({
-            _id: _.in([...new Set(memberIds)]),
-            roomId,
-            status: MEMBER_STATUS.ACTIVE,
-          })
-          .get();
-        membersResult.data.forEach((member) => {
-          memberMap[member._id] = member;
-        });
-      }
-
-      if (fromType === "member" && !memberMap[fromMemberId]) {
-        throw new Error("转出成员不存在");
-      }
-      if (toType === "member" && !memberMap[toMemberId]) {
-        throw new Error("转入成员不存在");
-      }
-      if (fromType === "member" && toType === "member" && fromMemberId === toMemberId) {
-        throw new Error("转出和转入成员不能相同");
-      }
-
-      let nextPublicScore = room.publicScore || 0;
-      const beforeMembers = [];
-      const afterMembers = [];
-
-      if (fromType === "public") {
-        if (nextPublicScore < amount) throw new Error("公共积分不足");
-        nextPublicScore -= amount;
-      }
-      if (toType === "public") {
-        nextPublicScore += amount;
-      }
-
-      if (fromType === "public" || toType === "public") {
-        beforeSnapshot.room = { publicScore: room.publicScore || 0 };
-        afterSnapshot.room = { publicScore: nextPublicScore };
-        await transaction.collection("rooms").doc(roomId).update({
-          data: {
-            publicScore: nextPublicScore,
-            updatedAt: changedAt,
-            version: _.inc(1),
-          },
-        });
-        targets.push({
-          type: "public",
-          beforeScore: room.publicScore || 0,
-          afterScore: nextPublicScore,
-        });
-      } else {
-        await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt, version: _.inc(1) },
-        });
-      }
-
-      if (fromType === "member") {
-        const member = memberMap[fromMemberId];
-        const beforeScore = member.score || 0;
-        const afterScore = beforeScore - amount;
-        beforeMembers.push({ memberId: member._id, score: beforeScore });
-        afterMembers.push({ memberId: member._id, score: afterScore });
-        targets.push({
-          type: "member",
-          memberId: member._id,
-          nickname: member.nickname,
-          beforeScore,
-          afterScore,
-        });
-        await transaction.collection("room_members").doc(member._id).update({
-          data: {
-            score: afterScore,
-            updatedAt: changedAt,
-          },
-        });
-      }
-
-      if (toType === "member") {
-        const member = memberMap[toMemberId];
-        const beforeScore = member.score || 0;
-        const afterScore = beforeScore + amount;
-        beforeMembers.push({ memberId: member._id, score: beforeScore });
-        afterMembers.push({ memberId: member._id, score: afterScore });
-        targets.push({
-          type: "member",
-          memberId: member._id,
-          nickname: member.nickname,
-          beforeScore,
-          afterScore,
-        });
-        await transaction.collection("room_members").doc(member._id).update({
-          data: {
-            score: afterScore,
-            updatedAt: changedAt,
-          },
-        });
-      }
-
-      beforeSnapshot.members = beforeMembers;
-      afterSnapshot.members = afterMembers;
-
-      const recordData = {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: recordType,
-        targets,
-        amount,
-        beforeSnapshot,
-        afterSnapshot,
-        remark: "积分转移",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt: changedAt,
-      };
-      await transaction.collection("score_records").add({
-        data: recordData,
-      });
-    });
-
-    return success();
-  } catch (error) {
-    return fail(error.message || "转移失败");
+  if (fromType === "public") {
+    const onlyToSelf =
+      targets.length === 1 &&
+      targets[0].toType === "member" &&
+      normalizeText(targets[0].toMemberId) === currentMember.openid;
+    if (!onlyToSelf) throw new Error("成员只能从公共积分池转给自己");
   }
 }
 
-// 执行同一来源到一个或多个目标的积分转移。
 async function batchTransferScore(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
-  const fromType = normalizeText(event.fromType);
+  const fromType = normalizeText(event.fromType || "member");
   const fromMemberId = normalizeText(event.fromMemberId);
-
+  const targets = Array.isArray(event.targets) ? event.targets : [];
   try {
     const amount = parsePositiveAmount(event.amount);
-    const transferTargets = normalizeTransferTargets(event.targets);
-    transferTargets.forEach((target) => assertTransferTarget(fromType, fromMemberId, target));
-    const recordType = getBatchTransferType(fromType, transferTargets);
-    const { room, currentMember, isOwner } = await getActiveRoomForParticipant(
-      roomId,
-      wxContext.OPENID
-    );
-    assertBatchTransferPermission({
-      isOwner,
-      currentMember,
-      fromType,
-      fromMemberId,
-      targets: transferTargets,
-    });
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-
-    await db.runTransaction(async (transaction) => {
-      const changedAt = now();
-      const targets = [];
-      const beforeSnapshot = {};
-      const afterSnapshot = {};
-      const memberIds = [
-        fromType === "member" ? fromMemberId : "",
-        ...transferTargets
-          .filter((target) => target.toType === "member")
-          .map((target) => target.toMemberId),
-      ].filter(Boolean);
-      const uniqueMemberIds = [...new Set(memberIds)];
-      const memberMap = {};
-
-      if (uniqueMemberIds.length) {
-        const membersResult = await transaction
-          .collection("room_members")
-          .where({
-            _id: _.in(uniqueMemberIds),
-            roomId,
-            status: MEMBER_STATUS.ACTIVE,
-          })
-          .get();
-        membersResult.data.forEach((member) => {
-          memberMap[member._id] = member;
-        });
-      }
-
-      if (fromType === "member" && !memberMap[fromMemberId]) {
-        throw new Error("转出成员不存在");
-      }
-      transferTargets.forEach((target) => {
-        if (target.toType === "member" && !memberMap[target.toMemberId]) {
-          throw new Error("转入成员不存在");
-        }
-      });
-
-      const memberDeltas = {};
-      let publicDelta = 0;
-
-      if (fromType === "public") {
-        publicDelta -= amount * transferTargets.length;
-      } else if (fromType === "member") {
-        memberDeltas[fromMemberId] =
-          (memberDeltas[fromMemberId] || 0) - amount * transferTargets.length;
-      } else {
-        throw new Error("转出来源不正确");
-      }
-
-      transferTargets.forEach((target) => {
-        if (target.toType === "public") {
-          publicDelta += amount;
-          return;
-        }
-        memberDeltas[target.toMemberId] = (memberDeltas[target.toMemberId] || 0) + amount;
-      });
-
-      const beforeMembers = [];
-      const afterMembers = [];
-      const beforePublicScore = Number(room.publicScore || 0);
-      const nextPublicScore = beforePublicScore + publicDelta;
-      if (nextPublicScore < 0) throw new Error("公共积分不足");
-
-      if (publicDelta !== 0) {
-        beforeSnapshot.room = { publicScore: beforePublicScore };
-        afterSnapshot.room = { publicScore: nextPublicScore };
-        targets.push({
-          type: "public",
-          beforeScore: beforePublicScore,
-          afterScore: nextPublicScore,
-        });
-        await transaction.collection("rooms").doc(roomId).update({
-          data: {
-            publicScore: nextPublicScore,
-            updatedAt: changedAt,
-            version: _.inc(1),
-          },
-        });
-      } else {
-        await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt, version: _.inc(1) },
-        });
-      }
-
-      for (const memberId of Object.keys(memberDeltas)) {
-        const member = memberMap[memberId];
-        if (!member) throw new Error("成员不存在");
-        const beforeScore = Number(member.score || 0);
-        const afterScore = beforeScore + memberDeltas[memberId];
-        beforeMembers.push({ memberId: member._id, score: beforeScore });
-        afterMembers.push({ memberId: member._id, score: afterScore });
-        targets.push({
-          type: "member",
-          memberId: member._id,
-          nickname: member.nickname,
-          beforeScore,
-          afterScore,
-        });
-        await transaction.collection("room_members").doc(member._id).update({
-          data: {
-            score: afterScore,
-            updatedAt: changedAt,
-          },
-        });
-      }
-
-      if (beforeMembers.length) beforeSnapshot.members = beforeMembers;
-      if (afterMembers.length) afterSnapshot.members = afterMembers;
-
-      const recordData = {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: recordType,
+    let nextRoom = null;
+    let recordId = "";
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertTransferPermission(room, openid, fromType, fromMemberId, targets);
+      const scoreChanges = buildTransferScoreChanges(
+        room,
+        fromType,
+        fromMemberId,
         targets,
-        amount,
-        beforeSnapshot,
-        afterSnapshot,
-        remark: transferTargets.length > 1 ? "批量转移" : "积分转移",
-        isUndone: false,
-        undoRecordId: null,
-        createdAt: changedAt,
-      };
-      await transaction.collection("score_records").add({
-        data: recordData,
-      });
+        amount
+      );
+      const publicChange = scoreChanges.find((change) => change.targetType === "public");
+      if (publicChange && Number(room.publicScore || 0) + publicChange.delta < 0) {
+        throw new Error("公共积分不足");
+      }
+      const type =
+        targets.length > 1
+          ? RECORD_TYPE.BATCH_TRANSFER
+          : fromType === "public"
+            ? RECORD_TYPE.PUBLIC_TO_MEMBER
+            : targets[0].toType === "public"
+              ? RECORD_TYPE.MEMBER_TO_PUBLIC
+              : RECORD_TYPE.MEMBER_TO_MEMBER;
+      const record = buildRecord(room, openid, type, amount, scoreChanges);
+      recordId = record.recordId;
+      nextRoom = appendRecord(applyScoreChanges(room, scoreChanges), record);
+      await saveRoom(transaction, nextRoom);
     });
-
-    return success();
+    return success({ recordId, roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
-    return fail(error.message || "转移失败");
+    return fail(error.message || "积分转移失败");
   }
 }
 
-// 撤销最近一次或指定的一次可撤销积分变更。
 async function undoLastAction(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
   const recordId = normalizeText(event.recordId);
-
   try {
-    const room = await getActiveRoomForOwner(roomId, wxContext.OPENID);
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-
-    let record;
-    if (recordId) {
-      const recordResult = await db.collection("score_records").doc(recordId).get();
-      record = recordResult.data;
-    } else {
-      const recordResult = await db
-        .collection("score_records")
-        .where({
-          roomId,
-          type: _.in(UNDOABLE_TYPES),
-          isUndone: false,
-        })
-        .orderBy("createdAt", "desc")
-        .limit(1)
-        .get();
-      record = recordResult.data[0];
-    }
-
-    if (!record || record.roomId !== roomId) throw new Error("没有可撤销的操作");
-    if (record.isUndone) throw new Error("该操作已撤销");
-    if (!UNDOABLE_TYPES.includes(record.type)) throw new Error("该操作不可撤销");
-
-    await db.runTransaction(async (transaction) => {
-      const changedAt = now();
-      const originalBeforeSnapshot = record.beforeSnapshot || {};
-      const originalAfterSnapshot = record.afterSnapshot || {};
-      const undoBeforeSnapshot = {};
-      const undoAfterSnapshot = {};
-      const undoTargets = [];
-
-      if (originalBeforeSnapshot.room && originalAfterSnapshot.room) {
-        const currentRoomResult = await transaction
-          .collection("rooms")
-          .doc(roomId)
-          .get();
-        const currentRoom = currentRoomResult.data || {};
-        const currentPublicScore = Number(currentRoom.publicScore || 0);
-        const publicDelta =
-          Number(originalBeforeSnapshot.room.publicScore || 0) -
-          Number(originalAfterSnapshot.room.publicScore || 0);
-        const nextPublicScore = currentPublicScore + publicDelta;
-
-        await transaction.collection("rooms").doc(roomId).update({
-          data: {
-            publicScore: nextPublicScore,
-            updatedAt: changedAt,
-            version: _.inc(1),
-          },
-        });
-        undoBeforeSnapshot.room = { publicScore: currentPublicScore };
-        undoAfterSnapshot.room = { publicScore: nextPublicScore };
-        undoTargets.push({
-          type: "public",
-          beforeScore: currentPublicScore,
-          afterScore: nextPublicScore,
-        });
-      } else {
-        await transaction.collection("rooms").doc(roomId).update({
-          data: { updatedAt: changedAt, version: _.inc(1) },
-        });
-      }
-
-      const beforeMemberMap = buildScoreMap(originalBeforeSnapshot.members || []);
-      const afterMemberMap = buildScoreMap(originalAfterSnapshot.members || []);
-      const memberIds = [
-        ...new Set([
-          ...Object.keys(beforeMemberMap),
-          ...Object.keys(afterMemberMap),
-        ]),
-      ];
-      const undoBeforeMembers = [];
-      const undoAfterMembers = [];
-
-      for (const memberId of memberIds) {
-        const memberResult = await transaction
-          .collection("room_members")
-          .doc(memberId)
-          .get();
-        const member = memberResult.data;
-        if (!member || member.roomId !== roomId) throw new Error("成员不存在");
-
-        const currentScore = Number(member.score || 0);
-        const memberDelta =
-          Number(beforeMemberMap[memberId] || 0) - Number(afterMemberMap[memberId] || 0);
-        const nextScore = currentScore + memberDelta;
-        const recordTarget = findRecordMemberTarget(record, memberId);
-
-        undoBeforeMembers.push({ memberId, score: currentScore });
-        undoAfterMembers.push({ memberId, score: nextScore });
-        undoTargets.push({
-          type: "member",
-          memberId,
-          nickname: (recordTarget && recordTarget.nickname) || member.nickname,
-          beforeScore: currentScore,
-          afterScore: nextScore,
-        });
-
-        await transaction.collection("room_members").doc(memberId).update({
-          data: {
-            score: nextScore,
-            updatedAt: changedAt,
-          },
-        });
-      }
-
-      if (undoBeforeMembers.length) undoBeforeSnapshot.members = undoBeforeMembers;
-      if (undoAfterMembers.length) undoAfterSnapshot.members = undoAfterMembers;
-
-      const recordData = {
-        roomId,
-        operatorOpenid: wxContext.OPENID,
-        operatorNickname,
-        type: RECORD_TYPE.UNDO,
-        targets: undoTargets,
-        amount: record.amount || 0,
-        beforeSnapshot: undoBeforeSnapshot,
-        afterSnapshot: undoAfterSnapshot,
-        remark: "撤销操作",
-        isUndone: false,
-        undoRecordId: record._id,
-        createdAt: changedAt,
+    let nextRoom = null;
+    let undoRecordId = "";
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      const records = [...(room.records || [])];
+      const recordIndex = records.findIndex(
+        (record) => record.recordId === recordId || record._id === recordId
+      );
+      const original = records[recordIndex];
+      if (!original) throw new Error("记录不存在");
+      if (original.isUndone) throw new Error("该记录已撤销");
+      if (!UNDOABLE_TYPES.includes(original.type)) throw new Error("该记录不可撤销");
+      const reverseChanges = (original.scoreChanges || []).map((change) => ({
+        targetType: change.targetType,
+        openid: change.openid || "",
+        nickname: change.nickname || "",
+        delta: -Number(change.delta || 0),
+      }));
+      const undoRecord = buildRecord(room, openid, RECORD_TYPE.UNDO, original.amount || 0, reverseChanges, {
+        undoOfRecordId: original.recordId || original._id,
+      });
+      undoRecordId = undoRecord.recordId;
+      records[recordIndex] = {
+        ...original,
+        isUndone: true,
+        undoneByRecordId: undoRecord.recordId,
       };
-      const undoResult = await transaction.collection("score_records").add({
-        data: recordData,
-      });
-
-      await transaction.collection("score_records").doc(record._id).update({
-        data: {
-          isUndone: true,
-          undoRecordId: undoResult._id || null,
-        },
-      });
+      const roomWithMarkedRecord = {
+        ...room,
+        records,
+      };
+      nextRoom = appendRecord(applyScoreChanges(roomWithMarkedRecord, reverseChanges), undoRecord);
+      await saveRoom(transaction, nextRoom);
     });
-
-    return success();
+    return success({ recordId: undoRecordId, roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
     return fail(error.message || "撤销失败");
   }
 }
 
-// 房主关闭房间，关闭后不再允许继续修改积分。
+async function reviewJoinRequest(event) {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const roomId = normalizeText(event.roomId);
+  const memberId = normalizeText(event.memberId);
+  const approved = normalizeText(event.action) === "approve";
+  try {
+    let nextRoom = null;
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      const members = [...(room.members || [])];
+      const index = members.findIndex((member) => member.openid === memberId);
+      const member = members[index];
+      if (!member || member.status !== MEMBER_STATUS.PENDING) throw new Error("申请不存在");
+      if (approved && getActiveMembers(room).length >= Number(room.memberLimit || 12)) {
+        throw new Error("房间人数已满");
+      }
+      members[index] = {
+        ...member,
+        status: approved ? MEMBER_STATUS.ACTIVE : MEMBER_STATUS.REJECTED,
+        updatedAt: now(),
+        leftAt: approved ? null : now(),
+      };
+      const roomWithMember = {
+        ...room,
+        members,
+      };
+      const record = buildRecord(
+        roomWithMember,
+        openid,
+        approved ? RECORD_TYPE.MEMBER_JOINED : RECORD_TYPE.MEMBER_JOIN_REJECTED,
+        0,
+        []
+      );
+      nextRoom = appendRecord(roomWithMember, record);
+      await saveRoom(transaction, nextRoom);
+    });
+    return success({ memberId, approved, roomView: buildRoomView(nextRoom, openid).roomView });
+  } catch (error) {
+    return fail(error.message || "处理申请失败");
+  }
+}
+
+async function removeMember(event) {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const roomId = normalizeText(event.roomId);
+  const memberId = normalizeText(event.memberId);
+  try {
+    let nextRoom = null;
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      if (memberId === room.ownerOpenid) throw new Error("不能移出房主");
+      const members = [...(room.members || [])];
+      const index = members.findIndex((member) => member.openid === memberId);
+      const member = members[index];
+      if (!member || member.status !== MEMBER_STATUS.ACTIVE) throw new Error("成员状态不可移出");
+      members[index] = {
+        ...member,
+        status: MEMBER_STATUS.REMOVED,
+        updatedAt: now(),
+        leftAt: now(),
+      };
+      const roomWithMember = {
+        ...room,
+        members,
+      };
+      const record = buildRecord(roomWithMember, openid, RECORD_TYPE.MEMBER_REMOVED, 0, []);
+      nextRoom = appendRecord(roomWithMember, record);
+      await saveRoom(transaction, nextRoom);
+    });
+    return success({ memberId, roomView: buildRoomView(nextRoom, openid).roomView });
+  } catch (error) {
+    return fail(error.message || "移出成员失败");
+  }
+}
+
 async function closeRoom(event) {
   await ensureCollections();
-
-  const wxContext = getWxContext();
+  const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
-
   try {
-    const room = await getActiveRoomForOwner(roomId, wxContext.OPENID);
-    const operatorNickname = await getOperatorNickname(
-      roomId,
-      wxContext.OPENID,
-      room.ownerNickname
-    );
-    const closedAt = now();
-
-    await db.collection("rooms").doc(roomId).update({
-      data: {
+    let nextRoom = null;
+    await runRoomTransaction(async (transaction) => {
+      const roomResult = await transaction.collection("rooms").doc(roomId).get();
+      const room = roomResult.data;
+      assertRoomWritable(room);
+      assertOwner(room, openid);
+      const closedRoom = {
+        ...room,
         status: ROOM_STATUS.CLOSED,
-        closedAt,
-        updatedAt: closedAt,
-        version: _.inc(1),
-      },
+        closedAt: now(),
+      };
+      const record = buildRecord(closedRoom, openid, RECORD_TYPE.ROOM_CLOSED, 0, []);
+      nextRoom = appendRecord(closedRoom, record);
+      await saveRoom(transaction, nextRoom);
     });
-    const recordData = {
-      roomId,
-      operatorOpenid: wxContext.OPENID,
-      operatorNickname,
-      type: RECORD_TYPE.ROOM_CLOSED,
-      targets: [{ type: "room", roomId, name: room.name }],
-      amount: 0,
-      beforeSnapshot: { room: { status: ROOM_STATUS.ACTIVE } },
-      afterSnapshot: { room: { status: ROOM_STATUS.CLOSED } },
-      remark: "关闭房间",
-      isUndone: false,
-      undoRecordId: null,
-      createdAt: closedAt,
-    };
-    await db.collection("score_records").add({
-      data: recordData,
-    });
-
-    return success();
+    return success({ roomView: buildRoomView(nextRoom, openid).roomView });
   } catch (error) {
     return fail(error.message || "关闭房间失败");
   }
 }
 
-async function removeByRoomId(collectionName, roomId) {
-  let removedTotal = 0;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = await db.collection(collectionName).where({ roomId }).remove();
-    const removed = Number((result.stats && result.stats.removed) || result.deleted || 0);
-    removedTotal += removed;
-    if (!removed) break;
-  }
-  return removedTotal;
-}
-
-// 清理超过数据保留期的房间及其成员、记录；24 小时过期但未满 7 天的房间仍可只读查看。
-async function cleanupExpiredRooms(event = {}) {
-  await ensureCollections();
-
-  const limitInput = parseInteger(event.limit || 50);
-  const limit = Math.min(
-    Math.max(Number.isInteger(limitInput) ? limitInput : 50, 1),
-    MAX_CLEANUP_LIMIT
-  );
-  const cutoff = now();
-  const legacyCutoff = new Date(cutoff.getTime() - LEGACY_EXPIRE_TO_PURGE_MS);
-  const purgeRoomsResult = await db
-    .collection("rooms")
-    .where({
-      purgeAt: _.lte(cutoff),
-    })
-    .limit(limit)
-    .get();
-  const roomMap = {};
-  (purgeRoomsResult.data || []).forEach((room) => {
-    roomMap[room._id] = room;
-  });
-
-  if (Object.keys(roomMap).length < limit) {
-    const legacyRoomsResult = await db
-      .collection("rooms")
-      .where({
-        expireAt: _.lte(legacyCutoff),
-      })
-      .limit(limit)
-      .get();
-    (legacyRoomsResult.data || []).forEach((room) => {
-      if (!room.purgeAt) {
-        roomMap[room._id] = room;
-      }
-    });
-  }
-
-  const roomsToRemove = Object.keys(roomMap)
-    .slice(0, limit)
-    .map((roomId) => roomMap[roomId]);
-
-  let roomsRemoved = 0;
-  let membersRemoved = 0;
-  let recordsRemoved = 0;
-
-  for (const room of roomsToRemove) {
-    const roomId = room._id;
-    recordsRemoved += await removeByRoomId("score_records", roomId);
-    membersRemoved += await removeByRoomId("room_members", roomId);
-    try {
-      await db.collection("rooms").doc(roomId).remove();
-      roomsRemoved += 1;
-    } catch (error) {
-      // 如果房间已被其他清理任务删除，保持清理任务幂等。
-    }
-  }
-
-  return success({
-    scanned: roomsToRemove.length,
-    roomsRemoved,
-    membersRemoved,
-    recordsRemoved,
-  });
-}
-
-// 云函数入口，根据 type 分发到具体业务 action。
 exports.main = async (event = {}) => {
-  const triggerName = event.TriggerName || event.triggerName || event.trigger_name;
-  const triggerType = event.Type || event.type;
-  if (triggerName === "cleanupExpiredRooms" || triggerType === "Timer") {
-    return cleanupExpiredRooms(event);
-  }
-
-  switch (event.type) {
-    case "getOpenId":
-    case "login":
-      return getOpenId();
-    case "createRoom":
-      return createRoom(event);
-    case "joinRoom":
-      return joinRoom(event);
-    case "getRoom":
-      return getRoom(event);
-    case "updateNickname":
-      return updateNickname(event);
-    case "updateScore":
-      return updateScore(event);
-    case "batchUpdateScore":
-      return batchUpdateScore(event);
-    case "transferScore":
-      return transferScore(event);
-    case "batchTransferScore":
-      return batchTransferScore(event);
-    case "undoLastAction":
-      return undoLastAction(event);
-    case "closeRoom":
-      return closeRoom(event);
-    case "cleanupExpiredRooms":
-      return cleanupExpiredRooms(event);
-    default:
-      return fail("未知操作类型", "UNKNOWN_TYPE");
+  const type = event.type || event.action || "";
+  try {
+    switch (type) {
+      case "getOpenId":
+        return getOpenId();
+      case "getHomeData":
+        return getHomeData();
+      case "saveDefaultName":
+        return saveDefaultName(event);
+      case "getRoom":
+        return getRoom(event);
+      case "getRoomPreview":
+        return getRoomPreview(event);
+      case "createRoom":
+        return createRoom(event);
+      case "joinRoom":
+        return joinRoom(event);
+      case "updateNickname":
+        return updateNickname(event);
+      case "updateScore":
+        return updateScore(event);
+      case "batchUpdateScore":
+        return batchUpdateScore(event);
+      case "transferScore":
+      case "batchTransferScore":
+        return batchTransferScore(event);
+      case "undoLastAction":
+        return undoLastAction(event);
+      case "reviewJoinRequest":
+        return reviewJoinRequest(event);
+      case "removeMember":
+        return removeMember(event);
+      case "closeRoom":
+        return closeRoom(event);
+      default:
+        return fail("未知操作类型", "UNKNOWN_ACTION");
+    }
+  } catch (error) {
+    return fail(error.message || "操作失败", error.code || "SERVER_ERROR");
   }
 };

@@ -11,6 +11,8 @@ Page({
     publicScore: 0,
     // 创建者在房间内展示的昵称。
     nickname: "",
+    // 是否需要房主确认后才能加入。
+    requireApproval: false,
     // 提交中状态，防止重复创建。
     submitting: false,
   },
@@ -28,6 +30,12 @@ Page({
     const { field } = event.currentTarget.dataset;
     this.setData({
       [field]: event.detail.value,
+    });
+  },
+
+  onRequireApprovalChange(event) {
+    this.setData({
+      requireApproval: !!event.detail.value,
     });
   },
 
@@ -51,6 +59,7 @@ Page({
       memberLimit: Number(this.data.memberLimit),
       publicScore: Number(this.data.publicScore),
       nickname: String(this.data.nickname || "").trim() || profile.nickname,
+      requireApproval: this.data.requireApproval,
     })
       .then((result) => {
         saveRecentRoom({

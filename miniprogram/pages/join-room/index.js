@@ -53,11 +53,18 @@ Page({
       nickname: String(this.data.nickname || "").trim() || profile.nickname,
     })
       .then((result) => {
+        const room = (result.roomView && result.roomView.room) || {};
         saveRecentRoom({
           roomId: result.roomId,
           roomCode: result.roomCode || roomCode,
-          name: "记分房间",
+          name: room.name || "记分房间",
         });
+        if (result.pending) {
+          wx.showToast({
+            title: "已申请，等待房主确认",
+            icon: "none",
+          });
+        }
         wx.redirectTo({
           url: `/pages/room/index?roomId=${result.roomId}`,
         });

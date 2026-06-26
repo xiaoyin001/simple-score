@@ -23,6 +23,189 @@
 
 ## 当前反馈
 
+### 2026-06-26 两表架构重构启动
+
+```text
+日期：2026-06-26
+来源：codex
+场景：数据层 / 云函数 / 房间页同步 / 首页房间列表 / 撤销
+结果：positive
+分值：8
+严重度：4
+置信度：4
+影响模块：cloudfunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：两表事实源、事务写入、scoreChanges 撤销
+- `miniprogram/pages/room/index.js`：只监听 rooms 当前房间文档
+- `miniprogram/pages/index/index.js`：从 users.roomIds 读取首页房间列表
+- `docs/architecture.md`、`docs/requirements.md`、`docs/room-sync-plan.md`：两表模型文档
+问题对应关系：
+- 多表读模型和通知链路排查成本高：对应改为 `users` + `rooms`。
+- 撤销不能覆盖后续分数：对应记录 `scoreChanges` 并按 delta 反向计算。
+- 首页状态不应保存在用户表：对应从 room 文档派生成员状态和房间状态。
+现象：
+- 原方案需要维护成员表、记录表、读模型和通知表，操作端和被动端同步路径不一致。
+根因或推测：
+- 小程序房间人数上限 12、记录只保留最近 50 条，当前阶段更适合单房间文档事实源，避免同步派生表成为第二事实源。
+处理方式：
+- 云函数只读写 `users` 和 `rooms`；房间页只 watch 当前 room；写操作返回最新 `roomView`；重复成功通过撤销处理。
+是否需要新增自动检查或测试：
+- 继续保留语法检查、模板扫描和高风险词扫描；人工验收需覆盖多端同步、24 小时只读、7 天隐藏、撤销反向计算和普通成员权限。
+```
+
+### 2026-06-25 三端最近记录顺序不一致
+
+```text
+日期：2026-06-25
+来源：human
+场景：房间页 / 最近记录 / 多账号同步 / 加入申请 / 暂不加入
+结果：negative
+分值：-7
+严重度：4
+置信度：4
+影响模块：cloudfunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`refreshRoomView`、`getRoom`
+- `miniprogram/utils/records.js`：记录展示排序
+- `miniprogram/pages/room/index.js`：房间页最近记录
+- `miniprogram/pages/records/index.js`：完整记录页
+- `docs/requirements.md`、`docs/architecture.md`：记录顺序约束
+问题对应关系：
+- 三个小程序窗口的最近记录显示不同最新项：对应服务端读模型和 getRoom 接口没有统一以房间内事务序号作为唯一权威顺序。
+- 只按 `createdAt` 或数据库返回顺序展示：审批、申请等连续操作在同一分钟、多端时间对象解析或 watcher 回推先后不一致时可能乱序。
+现象：同一房间内，房主端、成员端和第三个窗口的最近记录分别停在“暂不加入”或“申请加入”，记录顺序和最新记录不一致。
+根因或推测：云函数记录已经写入房间内递增 `sequence`，但 `getRoom` 查询、`room_views` 读取和前端防御排序没有完全统一使用 `sequence`；不同客户端可能来自写操作响应、room_views watcher 或静默 getRoom 回拉三条路径。
+处理方式：云函数 `score_records` 最近记录改为按 `sequence` 倒序读取并统一复排；小程序记录工具新增共享排序函数，房间页和记录页对所有来源的记录做防御性复排；需求和架构明确最近记录必须按 `sequence` 倒序展示。
+是否需要新增自动检查或测试：需要。后续应补记录排序单元测试或云函数集成测试，构造相同分钟内的申请、拒绝、加入记录，断言房间页、记录页和 roomView 都以最大 `sequence` 为最新。
+```
+
+### 2026-06-25 审批加入后同步失败和页面闪烁
+
+```text
+日期：2026-06-25
+来源：human / codex
+场景：房间页 / 加入审批 / 移出成员 / room_views 监听 / room_events 失效通知 / 多账号同步
+结果：negative
+分值：-8
+严重度：5
+置信度：4
+影响模块：scoreFunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`refreshRoomView`
+- `miniprogram/pages/room/index.js`：`applyRoomViewSnapshot`、`applyRoomEventSnapshot`、`loadRoom`、`reviewJoinRequest`、`removeMember`
+- `docs/requirements.md`、`docs/architecture.md`：同步策略说明
+问题对应关系：
+- 申请消息、同意加入和移出成员没有及时刷新：被动端只依赖 `room_views` watcher，遇到 watch 延迟、空快照、权限索引更新或开发工具多账号窗口切换时缺少独立的轻量失效通知。
+- 固定 3 秒静默校准会让公网用户规模扩大时产生 `在线客户端数 × 时间` 的云函数调用，属于错误架构方向。
+- 经常显示“同步失败”：`room_views` watcher 收到短暂空快照时，前端直接当成权限错误。
+- 其他人页面闪烁：云函数刷新 `room_views` 使用整体 `set`，监听端可能观察到文档短暂重建；前端静默回拉前也会进入错误状态。
+现象：房主端同意 pending 成员后，页面仍显示待确认或其他端未及时变更；被加入方未及时从待确认切换为成员；被移出方未及时灰态；房间页出现“同步失败，请检查权限”；多账号窗口中页面有短暂闪动。
+根因或推测：CloudBase watch 在读模型整体重写、权限索引更新或多端窗口切换时可能推送空快照或短暂漏推；空快照不等于真实无权限。读模型更新方式也应尽量保持同一文档稳定更新；只在操作端成功后刷新无法覆盖被动参与者。以固定周期调用云函数兜底会把同步成本从“按变更计费”放大为“按在线时长计费”。
+处理方式：`refreshRoomView` 改为优先 `update` 既有 `room_views` 文档，不存在时再创建；前端收到空快照时改为保持当前页面并做一次静默 `getRoom` 回拉；新增 `room_events/{roomId}` 轻量失效通知，只保存 sequence/version/updatedAt；客户端监听 `room_events`，只有发现远端 sequence 大于本地 sequence 时才静默调用一次 `getRoom`；取消固定 3 秒前台校准和主动操作成功后的无条件回拉；`getRoom` 读时修复成员可见列表或即时标记过期后同步刷新 `room_views` 和 `room_events`。
+是否需要新增自动检查或测试：已通过项目基础语法检查和关键词扫描；云函数已部署并用 CLI 验证可调用。仍需要在微信开发者工具多账号窗口人工验证审批同步。
+```
+
+### 2026-06-25 房主暂不加入后操作端未即时更新
+
+```text
+日期：2026-06-25
+来源：human / codex
+场景：房间页 / 加入审批 / 暂不加入 / 操作端即时一致性
+结果：negative
+分值：-8
+严重度：5
+置信度：5
+影响模块：scoreFunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：写操作返回 `roomView`
+- `miniprogram/pages/room/index.js`：`applyRoomViewData`、`applyWriteResult`、`reviewJoinRequest`
+- `docs/requirements.md`、`docs/architecture.md`：写响应读模型策略
+问题对应关系：
+- 房主点击“暂不加入”后，房主端待确认卡没有消失：操作端成功写入后仍等待 watcher 回推，watcher 漏推或延迟时页面停留在旧状态。
+- 不能恢复固定轮询或无条件回拉：公众小程序成本必须随房间实际变更增长，而不是随在线时长增长。
+现象：房主端确认暂不加入后 toast 显示已处理，但成员区仍保留该 pending 申请。
+根因或推测：取消主动操作后的无条件回拉后，缺少“写响应直接携带并应用最新读模型”的操作端即时更新路径。
+处理方式：所有成功写操作在云函数完成事务和 `refreshRoomView` 后返回最新 `roomView`；房间页新增 `applyRoomViewData` 和 `applyWriteResult`，操作端直接应用响应读模型。其他在线端继续由 `room_views` 和 `room_events` 驱动，不增加固定周期云函数调用。
+是否需要新增自动检查或测试：已通过项目基础语法检查和关键词扫描；需要在微信开发者工具多账号窗口验证“暂不加入”“同意加入”“移出成员”后操作端即时更新，其他端按事件驱动同步。
+```
+
+### 2026-06-25 发起加入申请后房主端未同步显示
+
+```text
+日期：2026-06-25
+来源：human / codex
+场景：房间页 / 加入申请 / 房主被动同步 / 成员私有通知
+结果：negative
+分值：-9
+严重度：5
+置信度：5
+影响模块：scoreFunctions / miniprogram / docs / cloudbase
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`refreshRoomView` 写入 `room_inboxes`
+- `miniprogram/pages/room/index.js`：`startRoomWatchers`、`applyRoomInboxSnapshot`
+- `docs/requirements.md`、`docs/architecture.md`、`docs/cloudbase-access.md`：成员级同步通知策略
+问题对应关系：
+- 新成员发起申请后，房主端不出现“同意加入 / 暂不加入”：房主属于被动端，不能依赖操作响应；`room_views` watcher 在当前开发工具/权限索引场景下仍可能漏推。
+- `room_events` 房间级通知依赖集合宽读权限，不如成员私有通知符合公众小程序权限模型。
+现象：申请端提交加入申请后，房主端只有手动刷新才出现待确认 UI。
+根因或推测：被动端缺少可稳定按用户读取的轻量失效通知；单房间事件文档如果权限未设置为 `adminwrite`，客户端无法监听，且宽读模型不是最小权限。
+处理方式：新增 `room_inboxes` 成员级通知集合；云函数每次刷新 `room_views` 后，为每个可读 openid 写入一条 `_openid = openid` 的轻量通知。客户端监听自己的 `roomId_openid` 文档，只有通知 sequence 大于本地 sequence 时才静默调用一次 `getRoom`。该方案成本按房间变更次数和房间成员数增长，本项目成员上限 12，不按在线时长轮询。
+是否需要新增自动检查或测试：已通过 `npm.cmd run check`；云函数需部署后在多账号窗口验证：申请加入后房主端自动出现待确认 UI，且无需刷新。
+```
+
+### 2026-06-25 room_views 权限导致监听读模型不可见
+
+```text
+日期：2026-06-25
+来源：auto / codex
+场景：小程序自动化验收 / room_views 监听 / 云数据库权限
+结果：negative
+分值：-7
+严重度：5
+置信度：5
+影响模块：cloudbase / miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/room/index.js`：room_views 监听查询
+- `docs/cloudbase-access.md`：权限前置条件
+问题对应关系：
+- 新增 `room_views` 后只部署云函数还不够，集合权限如果保持 `private`，客户端无法读取云函数写入的视图文档。
+- 数组字段查询不能用 `_.in([openid])` 表达“数组包含当前 openid”，应直接用 `watchableOpenids: openid`。
+现象：端到端脚本创建房间和 `getRoom` 成功，但客户端读取 `room_views` 返回空；服务端 NoSQL 查询确认文档存在且包含当前 openid。
+根因或推测：`room_views` 是云函数写入，旧网关 `private` 权限只允许客户端读取本人 `_openid` 文档；查询条件也使用了不匹配数组包含语义的写法。
+处理方式：将 `room_views` 云端权限同步为 `adminwrite`；房间页监听查询改为 `watchableOpenids: currentOpenid`；部署文档记录集合权限要求。
+是否需要新增自动检查或测试：后续如迁移到 Rego 自定义策略，应新增权限策略部署和验证步骤；当前仍需在微信开发者工具中验证 `room_views` 可读性。
+```
+
+### 2026-06-25 工业级数据一致性和监听改造
+
+```text
+日期：2026-06-25
+来源：human / codex
+场景：架构 / 数据表 / 同步监听 / 并发一致性 / 自动测试
+结果：positive
+分值：+8
+严重度：5
+置信度：5
+影响模块：scoreFunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：写 action 幂等、事务内重读、room_views 刷新、getRoom 权限收口
+- `cloudfunctions/scoreFunctions/core.js`：转移和撤销核心增量计算
+- `miniprogram/utils/api.js`：写请求自动 requestId
+- `miniprogram/pages/room/index.js`：room_views 单文档监听
+- `docs/requirements.md`、`docs/architecture.md`、`docs/cloudbase-access.md`、`docs/codex-workflow.md`：新数据模型和检查流程
+问题对应关系：
+- 完整房间数据读取权限过宽：对应新增 `getRoomPreview`，并让 `getRoom` 校验当前用户属于房间。
+- 三路 watcher 权限和乱序复杂：对应新增 `room_views` 单文档监听读模型。
+- 公共积分转移并发丢失更新：对应事务内重新读取 `rooms.publicScore` 后计算。
+- 加入、审批、移出、关闭与写操作并发：对应事务内重新读取房间和成员状态。
+- 重复点击或网络重试可能重复写：对应 `operation_requests` 和前端 `requestId`。
+- 历史高风险逻辑缺少自动测试：后续需要以仓库允许的方式补充正式自动回归能力。
+现象：此前 MVP 可运行，但权限、监听、并发和测试体系还不足以支撑工业级演进。
+根因或推测：初期实现优先跑通业务流程，部分写操作依赖事务外读取，监听拆成多个集合，自动化测试只覆盖语法和文案。
+处理方式：引入幂等请求表、房间读模型、房间内 sequence、成员 joinOrder/nicknameKey/scoreRevision，并将关键写操作改为事务内重新校验和写入。
+是否需要新增自动检查或测试：当前正式仓库保留基础语法检查和关键词扫描；后续仍应补云端或模拟数据库集成测试覆盖真实事务路径。
+```
+
 ### 2026-06-24 默认名入口脱离头像授权流程
 
 ```text
@@ -774,4 +957,79 @@
 根因或推测：微信小程序 `button` 默认样式会影响宽度和文字垂直居中，显式设置 `width: 100%`、`display: flex`、`align-items: center`、`justify-content: center` 能稳定修复。
 处理方式：后续新增按钮或修复按钮对齐时优先沿用当前样式策略。
 是否需要新增自动检查或测试：暂不需要。后续可在人工视觉验收中继续检查按钮宽度和文字居中。
+```
+### 2026-06-25 待开发功能先出效果图后落地
+
+```text
+日期：2026-06-25
+来源：human
+场景：首页 / 创建房间 / 房间页 / 成员管理 / UI 确认流程
+结果：positive
+分值：+4
+严重度：4
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `tmp/待开发功能.md`：本轮需求来源
+- `tmp/待开发功能效果图.html`、`tmp/待开发功能效果图.png`：确认用效果图
+- `cloudfunctions/scoreFunctions/index.js`：成员顺序、重名校验、加入审批、移出成员和记录类型
+- `miniprogram/pages/index/*`、`miniprogram/pages/create-room/*`、`miniprogram/pages/join-room/*`、`miniprogram/pages/room/*`：头像、审批开关、待确认卡、本人高亮和移出状态
+问题对应关系：
+- 用户要求先理解需求并出效果图确认：对应本轮先生成静态效果图，用户确认后再改正式代码。
+- 成员展示不能按积分重排：对应成员列表固定按进入顺序展示。
+- 本人卡片难以识别：对应本人卡片使用浅绿色背景和“我”标记。
+- 房主需要管理加入和移出成员：对应新增加入审批、待确认卡、移出成员状态和记录。
+处理方式：效果图确认后再做正式实现；涉及行为、字段、action 和约束变化时同步更新 `docs/requirements.md` 与 `docs/architecture.md`。
+是否需要新增自动检查或测试：需要微信开发者工具人工验证审批加入、拒绝加入、移出成员、被移出成员灰态展示、成员顺序不随积分变化、同名拦截和本人高亮。
+```
+
+### 2026-06-25 多人同步连续不一致
+
+```text
+日期：2026-06-25
+来源：human
+场景：房间页 / 多账号同步 / 加入审批 / 移出成员
+结果：negative
+分值：-10
+严重度：5
+置信度：5
+影响模块：scoreFunctions / miniprogram / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`refreshRoomView`、`getRoom`、`reviewJoinRequest`、`removeMember`
+- `miniprogram/pages/room/index.js`：`startRoomWatchers`、`applyRoomViewData`、`applyWriteResult`、`applyRoomInboxSnapshot`
+- `docs/cloudbase-access.md`：云函数部署和线上源码确认流程
+问题对应关系：
+- 房主端“暂不加入”后本人页面不刷新：线上云函数仍返回旧结构，没有 `roomView`，操作端无法直接应用最新读模型。
+- 申请加入、同意加入、移出成员在其他客户端不同步：线上云函数没有写 `room_inboxes`，客户端轻量失效通知链路实际不存在。
+- 历史房间即使部署新版后也可能缺少 inbox：`getRoom` 旧逻辑只在 `room_views` 缺失时修复，没有检查 `room_views.sequence` 和当前用户 inbox。
+- 部署命令显示成功但线上源码未变：之前只看部署状态，没有检查 `fn detail` 中的 `CodeInfo` 关键标记。
+现象：多账号调试中，房主需要刷新后才看到加入申请；拒绝申请后房主端仍显示待确认；被同意或移出的成员端也不能及时更新。
+根因或推测：根因已确认。18:41 的线上日志中 `reviewJoinRequest` 返回 `{"success":true,"memberId":...,"approved":false}`，不带 `roomView`；18:47 的 `fn code update` 最终 `UpdateFailed`，18:54 从项目根目录 `fn deploy --dir cloudfunctions/scoreFunctions` 虽显示成功但线上源码仍为旧版。18:56 起改为在函数目录内执行 `fn deploy --force --dir .` 后，线上源码才包含 `room_inboxes` 和 `roomView` 返回。
+处理方式：重新从函数目录部署云函数；新增 `getRoom` 自修复检查，发现 `room_views.sequence` 落后或当前用户 `room_inboxes/{roomId_openid}` 缺失/落后时刷新读模型并补齐 inbox；部署后用 `fn detail` 校验线上源码关键标记。
+是否需要新增自动检查或测试：需要。短期必须在多人功能验收中增加“线上源码关键标记检查”和多账号审批/拒绝/移出同步测试；后续应补云函数部署后 smoke 脚本，自动检查线上 `CodeInfo` 包含关键同步逻辑。
+```
+
+### 2026-06-25 加入申请记录已写入但房主未收到待确认卡
+
+```text
+日期：2026-06-25
+来源：human
+场景：房间页 / 多账号同步 / 加入审批
+结果：negative
+分值：-9
+严重度：5
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`startRoomWatchers`、`applyRoomViewData`、`applyRoomInvalidationSnapshot`
+- `cloudfunctions/scoreFunctions/index.js`：`refreshRoomView`
+- `docs/architecture.md`：房间同步监听说明
+问题对应关系：
+- 申请加入后最近记录已有“申请加入”，但房主成员区没有待确认卡：后端已生成 pending 成员和记录，房主客户端没有稳定收到被动失效通知。
+- `room_inboxes` 作为 private 集合可能受客户端可读权限影响；`room_views` 的 `_id + watchableOpenids` 数组条件 watch 也可能漏触发。
+- `room_events` 已由云函数写入但此前没有被客户端正式监听，导致低成本兜底通知没有发挥作用。
+现象：多账号调试中，申请方显示等待确认，房主端仍显示旧成员列表，需要刷新后才可能看到待确认 UI。
+根因或推测：云函数日志显示 20:05 的 `joinRoom` 返回 `roomView.members` 已包含 `测试号03 status: pending`，所以问题不是写入失败，而是房主端 watcher 链路不完整。
+处理方式：客户端新增 `room_events/{roomId}` watcher，收到更高 `sequence` 时才静默调用一次 `getRoom`；同时 `applyRoomViewData` 根据当前 openid 重新计算当前成员和房主身份，避免 watcher/inbox/getRoom 三条路径状态不一致。
+是否需要新增自动检查或测试：需要补多账号自动化或人工矩阵，覆盖申请、同意、拒绝、移出时房主端和成员端的实时同步。
 ```

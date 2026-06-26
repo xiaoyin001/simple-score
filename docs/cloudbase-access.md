@@ -1,8 +1,8 @@
 # 云开发访问与部署说明
 
-更新日期：2026-06-24
+更新日期：2026-06-26
 
-本项目使用微信云开发 CloudBase，不再维护本地模拟服务。云端访问通过 CloudBase CLI 的本机登录态完成，不在仓库内保存 `SecretId`、`SecretKey`、Token 或任何长期凭证。
+本项目使用微信云开发 CloudBase，不维护本地模拟服务。云端访问通过 CloudBase CLI 的本机登录态完成，不在仓库内保存 `SecretId`、`SecretKey`、Token 或任何长期凭证。
 
 ## 当前环境
 
@@ -11,7 +11,7 @@
 套餐：个人版
 状态：正常
 业务云函数：scoreFunctions
-数据集合：rooms、room_members、score_records
+数据集合：users、rooms
 ```
 
 该环境 ID 不是密钥，可用于部署和查询命令。真实授权来自执行机器上的 CloudBase CLI 登录态。
@@ -24,25 +24,19 @@
 tcb login
 ```
 
-CLI 会打开浏览器授权页，或输出授权链接和用户码。按提示完成授权后，可用以下命令验证：
+验证登录态：
 
 ```bash
 tcb env list
 ```
 
-如果在 Windows PowerShell 中遇到 `tcb.ps1 cannot be loaded because running scripts is disabled`，使用 Git Bash 执行 `tcb`，或在 PowerShell 中改用 npm 生成的 cmd 入口：
+Windows PowerShell 如遇到 `tcb.ps1` 执行策略限制，可使用 npm 生成的 cmd 入口：
 
 ```powershell
 & "$env:APPDATA\npm\tcb.cmd" env list
 ```
 
 ## 常用只读检查
-
-查看环境：
-
-```bash
-tcb env list
-```
 
 查看云函数：
 
@@ -64,33 +58,46 @@ tcb -e cloud1-d0g5o9l1ada4cc67e fn log scoreFunctions
 
 读取云数据库前应先说明查询集合、过滤条件和返回条数；默认优先使用计数或有限字段查询，避免读取不必要的用户数据。
 
+## 数据集合权限
+
+当前业务只使用两张集合：
+
+```text
+users: private 或仅云函数写
+rooms: adminwrite
+```
+
+所有业务写入都必须通过 `scoreFunctions`。房间页客户端只监听当前 `rooms/{roomId}` 文档用于展示同步，不直接写房间、成员、积分或记录。
+
+如果线上安全规则禁止客户端读取 `rooms`，房间页仍能通过 `getRoom` 加载，但实时同步会失败；需要在云开发控制台为当前房间成员可读场景配置合适的读权限，或在开发阶段临时使用 `adminwrite` 验证功能。
+
 ## 部署云函数
 
-部署当前本地 `scoreFunctions` 到免费云环境时，先进入云函数目录再更新代码，确保上传包根目录包含 `index.js`：
+部署当前本地 `scoreFunctions` 到免费云环境时，建议进入云函数目录执行：
 
 ```bash
 cd cloudfunctions/scoreFunctions
-tcb -e cloud1-d0g5o9l1ada4cc67e fn code update scoreFunctions --deployMode cos
+tcb -e cloud1-d0g5o9l1ada4cc67e fn deploy scoreFunctions --force --dir . --runtime Nodejs16.13 --deployMode cos
 cd ../..
 ```
 
-Windows PowerShell 中如遇到 `tcb.ps1` 执行策略限制，可使用 `tcb.cmd`。交互确认时选择“使用当前配置更新”。部署后用以下命令确认 `$LATEST` 状态为“部署完成”，且 `updateNickname` 不再返回 `UNKNOWN_TYPE`：
+部署后确认 `$LATEST` 状态为“部署完成”：
 
 ```bash
 tcb -e cloud1-d0g5o9l1ada4cc67e fn list-function-versions scoreFunctions
-tcb -e cloud1-d0g5o9l1ada4cc67e fn invoke scoreFunctions -d '{"type":"updateNickname"}'
+tcb -e cloud1-d0g5o9l1ada4cc67e fn detail scoreFunctions
 ```
 
-创建或更新过期房间清理触发器：
+当前两表版本在线源码至少应包含 `getHomeData`、`saveDefaultName`、`scoreChanges` 和 `hiddenAt` 等关键标记。
 
-```bash
-tcb -e cloud1-d0g5o9l1ada4cc67e fn trigger create scoreFunctions --trigger-name cleanupExpiredRooms --cron "0 0 * * * * *"
-```
+## 生命周期
 
-触发器每小时执行一次，云函数会删除超过 `purgeAt` 保留期的房间、成员和操作记录；超过 `expireAt` 但未到 `purgeAt` 的房间仍可只读查看。手动触发清理可调用：
+当前阶段不创建物理清理触发器。房间创建后：
 
-```bash
-tcb -e cloud1-d0g5o9l1ada4cc67e fn invoke scoreFunctions -d '{"type":"cleanupExpiredRooms","limit":50}'
+```text
+24 小时后：只读，不能继续写操作。
+7 天后：首页不展示，并从 users.roomIds 懒清理。
+数据库：rooms 文档仍保留。
 ```
 
 部署后在微信开发者工具中重新编译小程序，并人工验证创建房间、加入房间、记分、转移、撤销和关闭房间流程。

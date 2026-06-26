@@ -57,6 +57,19 @@
         <view class="hint">默认 0</view>
       </view>
     </view>
+
+    <view class="approval-card">
+      <view>
+        <view class="approval-title">加入需房主同意</view>
+        <view class="approval-desc">开启后，新成员提交申请，房主确认后才进入成员列表。</view>
+      </view>
+      <switch
+        class="approval-switch"
+        color="#47c982"
+        checked="{{requireApproval}}"
+        bindchange="onRequireApprovalChange"
+      />
+    </view>
   </view>
 
   <view class="tip-card">创建成功后会自动进入房间，可直接分享给成员加入。</view>

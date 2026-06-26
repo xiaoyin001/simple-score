@@ -134,6 +134,16 @@ page {
   font-size: 24rpx;
 }
 
+.status-bar.pending {
+  background: #fff8dd;
+  color: #7a5016;
+}
+
+.status-bar.removed {
+  background: #f6efe4;
+  color: #806647;
+}
+
 .score-panel {
   display: flex;
   flex-direction: column;
@@ -265,6 +275,30 @@ page {
   box-sizing: border-box;
 }
 
+.member-card.current-member {
+  border-color: #47c982;
+  background: linear-gradient(180deg, #e7f7ee, rgba(255, 255, 255, 0.9));
+  box-shadow: 0 14rpx 30rpx rgba(47, 160, 102, 0.14);
+}
+
+.member-card.removed-member {
+  background: #f7f1e7;
+  opacity: 0.74;
+}
+
+.pending-list {
+  margin-bottom: 14rpx;
+}
+
+.pending-card {
+  margin-bottom: 14rpx;
+  padding: 18rpx 20rpx;
+  border: 2rpx solid rgba(255, 193, 7, 0.28);
+  border-radius: 26rpx;
+  background: #fff8dd;
+  box-sizing: border-box;
+}
+
 .member-info {
   display: flex;
   align-items: center;
@@ -274,6 +308,49 @@ page {
 
 .member-check {
   margin-right: 10rpx;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 4rpx solid rgba(255, 255, 255, 0.86);
+  border-radius: 50%;
+  color: #3b260f;
+  font-weight: 900;
+  box-shadow: 0 8rpx 18rpx rgba(111, 74, 28, 0.12);
+  box-sizing: border-box;
+}
+
+.member-avatar {
+  width: 58rpx;
+  height: 58rpx;
+  font-size: 24rpx;
+}
+
+.avatar-yellow {
+  background: linear-gradient(135deg, #ffe66d, #ffb23e);
+}
+
+.avatar-green {
+  background: linear-gradient(135deg, #73d99d, #2bb56e);
+  color: #ffffff;
+}
+
+.avatar-blue {
+  background: linear-gradient(135deg, #8ac8ff, #4b92df);
+  color: #ffffff;
+}
+
+.avatar-red {
+  background: linear-gradient(135deg, #ff9a8a, #ef6558);
+  color: #ffffff;
+}
+
+.avatar-muted {
+  background: #f1e8d8;
+  color: #8b7356;
 }
 
 .rank {
@@ -300,11 +377,13 @@ page {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 8rpx;
   min-width: 0;
   width: 100%;
 }
 
 .member-name {
+  flex-shrink: 1;
   min-width: 0;
   color: #3b260f;
   font-size: 29rpx;
@@ -312,6 +391,32 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.member-tag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 32rpx;
+  padding: 0 10rpx;
+  border-radius: 999rpx;
+  background: #fff2b0;
+  color: #704812;
+  font-size: 19rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.member-tag.current {
+  background: #dff7e9;
+  color: #23784d;
+}
+
+.member-tag.muted {
+  background: #eee3d3;
+  color: #806647;
 }
 
 .name-edit-button {
@@ -395,6 +500,12 @@ page {
 .transfer {
   background: #e7f3ff;
   color: #236ea9;
+  border: 0;
+}
+
+.remove {
+  background: #f6efe4;
+  color: #806647;
   border: 0;
 }
 

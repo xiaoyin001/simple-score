@@ -56,6 +56,9 @@
 8. 查看操作记录。
 9. 撤销指定的一条可撤销积分操作。
 10. 关闭房间。
+11. 开启或关闭加入需确认规则。
+12. 同意或拒绝成员加入申请。
+13. 将指定普通成员移出房间，成员记录和历史操作记录继续保留。
 
 ### 3.2 成员
 
@@ -72,6 +75,7 @@
 7. 退出房间。
 8. 将自己的积分转给其他成员或公共积分池。
 9. 从公共积分池转入积分给自己。
+10. 若房间开启加入确认，提交加入申请并等待房主确认。
 
 ### 3.3 游客或未加入用户
 
@@ -93,7 +97,7 @@
 
 ### 4.4 团队活动积分
 
-团队活动组织者创建房间，将成员加入后进行活动积分统计。活动结束后可生成结算结果或排行榜截图。
+团队活动组织者创建房间，将成员加入后进行活动积分统计。活动结束后可生成活动结果截图。
 
 ## 5. 功能范围
 
@@ -111,6 +115,7 @@
 6. 简短定位文案，例如“多人活动记分工具”。
 7. 首页默认名设置区，用户可直接输入本地默认名。
 8. 创建或加入房间时默认使用首页默认名；默认名需点击保存后写入本地缓存，输入过程中不自动保存。若未保存默认名，前端使用“我”作为昵称兜底。
+9. 展示当前用户头像；第一版使用默认名生成稳定的本地头像样式，不依赖微信头像授权。
 
 首页不应出现赌博、棋牌现金结算、下注等敏感词。
 
@@ -126,6 +131,7 @@
 4. 成员初始积分，第一版固定为 0。
 5. 房间可操作有效期默认 24 小时，云端数据保留 7 天。
 6. 我的昵称，默认带入首页默认名，可在本次创建时临时修改，不反写首页默认名。
+7. 是否需要房主同意后才能加入，默认关闭。
 
 创建成功后：
 
@@ -152,7 +158,11 @@
 4. 房间人数未达到上限。
 5. 同一用户重复进入同一房间时，不应重复创建成员。
 6. 用户可设置房间内昵称，默认使用首页设置的默认名；若首页未保存默认名，前端使用“我”作为昵称兜底。
-7. 每名成员加入后最多可修改一次自己的昵称；仍有改名机会时，房间页应在本人昵称旁显示编辑 icon 按钮，不使用文字按钮。
+7. 房间内 active 或 pending 成员昵称不允许重复。
+8. 每名成员加入后最多可修改一次自己的昵称；仍有改名机会时，房间页应在本人昵称旁显示改名入口。
+9. 若房间开启加入确认，新用户加入时先成为 pending 成员，房主同意后才成为 active 成员并占用人数名额。
+10. 被房主移出的成员不能再次作为 active 成员参与当前房间。
+11. 未加入用户只能获取加入前预览信息，不应获取完整成员列表和操作记录。
 
 ### 5.4 房间页面
 
@@ -166,18 +176,23 @@
 4. 公共积分池。
 5. 成员列表。
 6. 每个成员的昵称和当前积分。
-7. 排行榜顺序，默认按积分从高到低排列。
+7. 成员顺序固定为进入顺序，不随积分变化重新排序。
 8. 操作按钮。
 9. 分享按钮。
 10. 最近操作记录入口。
+11. 当前用户自己的成员卡片应有明显背景区分。
+12. 待确认加入申请应在房主端展示同意和暂不加入入口。
+13. 已移出的成员应以灰态标记展示，保留其积分和历史记录但不再提供记分、转移或批量选择入口。
 
 成员卡片应至少包含：
 
 1. 成员昵称。
-2. 当前积分。
-3. 加分按钮。
-4. 扣分按钮。
-5. 转移按钮，第一版可放在更多操作中。
+2. 成员头像，第一版由昵称生成本地头像样式。
+3. 当前积分。
+4. 加分按钮。
+5. 扣分按钮。
+6. 转移按钮，第一版可放在更多操作中。
+7. 房主可见的移出入口，房主本人不可移出。
 
 ### 5.5 积分操作
 
@@ -238,7 +253,7 @@
 
 #### 5.5.6 成员之间转移积分
 
-用户在成员排行中选择转入成员和分值，确认后完成转移。房间页转移入口默认且只从当前用户自己转出，不在页面提供选择其他转出来源的入口；公共积分池的转入入口放在公共积分池区域。
+用户在成员列表中选择转入成员和分值，确认后完成转移。房间页转移入口默认且只从当前用户自己转出，不在页面提供选择其他转出来源的入口；公共积分池的转入入口放在公共积分池区域。
 
 规则：
 
@@ -247,9 +262,9 @@
 3. 是否允许转出成员变成负数需要配置。第一版建议允许，但提示确认。
 4. 操作必须原子化。
 5. 房间页成员卡片应支持直接点击目标成员打开转移弹窗。
-6. 成员排行应支持批量选择多个目标成员后打开转移弹窗；每个目标获得同样分值，当前用户一次性扣除总分值。
+6. 成员列表应支持批量选择多个目标成员后打开转移弹窗；每个目标获得同样分值，当前用户一次性扣除总分值。
 7. 公共积分池区域应同时提供“转入”和“转出”入口：转入表示当前用户转入公共积分池，转出表示公共积分池转给当前用户。
-8. 房间页公共积分池和成员排行操作按钮不得撑出卡片边界，不得挤压标题导致文字竖排。
+8. 房间页公共积分池和成员列表操作按钮不得撑出卡片边界，不得挤压标题导致文字竖排。
 
 ### 5.6 操作记录
 
@@ -276,6 +291,7 @@
 4. 当前用户参与记录时，可将当前用户显示为“我”，便于不同成员理解自己的转入或转出状态。
 5. 房间页最近记录和记录页都应展示操作人，便于追溯是谁发起了本次操作。
 6. 房间页最近记录每页展示 5 条，并提供上一页、下一页分页；完整记录页仍展示最近 50 条。
+7. 最近记录必须按房间内递增 `sequence` 倒序展示，操作时间只作为旧数据兜底排序依据，确保多端看到同一条最新记录。
 
 操作类型包括：
 
@@ -290,7 +306,10 @@
 9. 成员之间转移积分。
 10. 批量转移。
 11. 撤销操作。
-12. 关闭房间。
+12. 申请加入。
+13. 暂不加入。
+14. 成员移出。
+15. 关闭房间。
 
 ### 5.7 撤销功能
 
@@ -342,10 +361,10 @@
 1. 房间可操作有效期默认为 24 小时。
 2. 房主可手动关闭房间。
 3. 房间关闭后不可继续修改积分。
-4. 房间超过 `expireAt` 后不可继续加入或修改积分，但未被清理前仍可进入只读查看房间、成员积分和操作记录。
-5. 云端房间、成员和操作记录默认保留 7 天；超过 `purgeAt` 后由云函数定时清理，避免云数据库长期堆积。
+4. 房间超过 `expireAt` 后不可继续加入或修改积分，但仍可进入只读查看房间、成员积分和操作记录。
+5. 房间超过 `hiddenAt` 后从玩家视角隐藏，首页不展示并从 `users.roomIds` 懒清理；当前阶段不物理删除云端房间文档。
 
-房间表必须保留 `expireAt`、`purgeAt` 和 `closedAt` 字段。`expireAt` 默认等于创建时间加 24 小时，用于控制可操作生命周期；`purgeAt` 默认等于创建时间加 7 天，用于控制云端数据物理清理。
+房间表必须保留 `expireAt`、`hiddenAt` 和 `closedAt` 字段。`expireAt` 默认等于创建时间加 24 小时，用于控制可操作生命周期；`hiddenAt` 默认等于创建时间加 7 天，用于控制玩家侧可见生命周期。
 
 ### 5.10 广告变现预留
 
@@ -372,7 +391,7 @@
 2. 积分操作提交后，应在 1 秒到 2 秒内反馈结果。
 3. 房间人数最多 12 人，不需要复杂分页。
 4. 操作记录第一版默认显示最近 50 条。
-5. 房间页主动操作成功后不得进入整页 loading 状态；应依赖房间级 `watch()` 对房间、成员和记录区域做局部更新。
+5. 房间页主动操作成功后不得进入整页 loading 状态；操作端应直接应用云函数响应中的最新 `roomView`，其他在线端通过当前 `rooms/{roomId}` 文档监听更新，不允许所有客户端固定周期调用云函数。
 
 ### 6.2 数据一致性
 
@@ -381,9 +400,14 @@
 3. 同一次转移操作必须保证原子性。
 4. 多人同时操作时，应以后端写入结果为准。
 5. 每次积分变化都必须有记录。
-6. 房间内多客户端同步采用 CloudBase 数据库 `watch()`，监听范围必须限定在当前 `roomId`。
-7. 客户端监听只用于展示同步，不得直接写 `rooms`、`room_members` 或 `score_records`。
-8. 监听异常时，客户端提示检查数据库读权限，不做定时轮询兜底；下拉刷新只能重新获取一次云函数数据，不能替代修复监听权限。
+6. 房间内多客户端同步以 CloudBase 数据库 `watch()` 为主，监听范围必须限定在当前 `rooms/{roomId}` 文档。
+7. 客户端监听只用于展示同步，不得直接写 `rooms` 或 `users` 的核心业务字段。
+8. 监听异常时，客户端提示检查数据库读权限；下拉刷新只能重新获取一次云函数数据，不能替代修复监听权限。
+9. 监听收到短暂空快照时不应立即展示同步失败，应保留当前页面状态并做一次静默快照回拉，避免页面闪烁。
+10. 页面重新显示时只重建 watcher，不主动固定请求云函数。
+11. 成功写操作应返回最新 `roomView`，用于操作端立即更新页面，不额外发起一次 `getRoom`。
+12. 当前阶段不维护复杂幂等表；前端用提交中状态减少重复点击，重复成功可通过撤销处理。
+13. 写操作必须在云函数事务内重新校验房间状态、过期时间、成员状态、人数上限、昵称重名和公共积分余额。
 
 ### 6.3 安全
 
@@ -464,105 +488,88 @@ docs/
 
 ## 8. 数据库设计建议
 
-### 8.1 rooms 房间表
+当前阶段只保留两张业务表：`users` 和 `rooms`。
+
+### 8.1 users 用户表
 
 字段建议：
 
 ```text
-_id: string
+_id: string，用户 openid
+openid: string
+defaultName: string
+roomIds: string[]
+createdAt: date
+updatedAt: date
+```
+
+`users` 只保存用户资料和关联房间 ID，不保存房间名、房间码、角色、成员状态、积分或房间生命周期状态。
+
+### 8.2 rooms 房间表
+
+字段建议：
+
+```text
+_id: string，当前等于 roomCode
 roomCode: string
 name: string
 ownerOpenid: string
-ownerNickname: string
-memberOpenids: string[]
 memberLimit: number
+requireApproval: boolean
+status: active | closed
 publicScore: number
-status: string
+sequence: number
+members: array
+records: array
 createdAt: date
 updatedAt: date
 expireAt: date
-purgeAt: date
+hiddenAt: date
 closedAt: date | null
 version: number
 ```
 
-`memberOpenids` 保存当前 active 成员 openid，用于 CloudBase 数据库 `watch()` 的房间级读权限判断。创建房间、加入房间和读取房间详情时由云函数维护或回填。
-
-`status` 可选值：
+`members` 直接内嵌在房间文档中：
 
 ```text
-active
-closed
-expired
-```
-
-### 8.2 room_members 成员表
-
-字段建议：
-
-```text
-_id: string
-roomId: string
 openid: string
 nickname: string
+role: owner | member
+status: active | pending | removed | rejected
 score: number
-role: string
+joinOrder: number
 nicknameEdited: boolean
 joinedAt: date
 updatedAt: date
 leftAt: date | null
-status: string
 ```
 
-`role` 可选值：
+`records` 直接内嵌在房间文档中，只保留最近 50 条：
 
 ```text
-owner
-member
-```
-
-`status` 可选值：
-
-```text
-active
-left
-```
-
-### 8.3 score_records 积分记录表
-
-字段建议：
-
-```text
-_id: string
-roomId: string
+recordId: string
+sequence: number
+type: string
 operatorOpenid: string
 operatorNickname: string
-type: string
-targets: array
 amount: number
-beforeSnapshot: object
-afterSnapshot: object
-remark: string
+scoreChanges: array
 isUndone: boolean
-undoRecordId: string | null
+undoOfRecordId: string
+undoneByRecordId: string
 createdAt: date
 ```
 
-`type` 可选值：
+`scoreChanges` 保存本次操作的积分变化量：
 
 ```text
-member_add
-member_subtract
-batch_add
-batch_subtract
-public_to_member
-member_to_public
-member_to_member
-undo
-room_created
-member_joined
-room_closed
+targetType: member | public
+openid: string
+nickname: string
+delta: number
 ```
+
+撤销时必须读取原记录的 `scoreChanges`，将每一条 `delta` 反向应用到当前房间数据。
 
 ## 9. 云函数设计建议
 
@@ -587,6 +594,7 @@ name
 memberLimit
 publicScore
 nickname
+requireApproval
 ```
 
 校验：
@@ -594,6 +602,7 @@ nickname
 1. 房间名称不能为空。
 2. 人数上限在 2 到 12 之间。
 3. 公共积分必须是整数。
+4. `requireApproval` 转换为布尔值，默认 `false`。
 
 返回：
 
@@ -620,6 +629,8 @@ nickname
 3. 房间未过期。
 4. 人数未满。
 5. 重复加入时返回已有成员信息。
+6. 昵称不能与 active 或 pending 成员重复。
+7. 开启加入确认时，写入 pending 成员和申请加入记录；房主同意后才写入加入房间记录并成为 active 成员。
 
 ### 9.4 getRoom
 
@@ -641,7 +652,46 @@ currentUserRole
 currentMember
 ```
 
-### 9.5 updateNickname
+`members` 返回 active、pending 和 removed 成员。前端按进入顺序展示 active 和 removed 成员，并在房主端单独展示 pending 申请。
+
+### 9.5 reviewJoinRequest
+
+用途：房主同意或拒绝加入申请。
+
+入参：
+
+```text
+roomId
+memberId
+action: approve | reject
+```
+
+校验：
+
+1. 操作人必须是房主。
+2. 房间必须为 active。
+3. 成员必须处于 pending 状态。
+4. 同意时房间 active 人数不能超过上限，昵称仍不能重复。
+
+### 9.6 removeMember
+
+用途：房主将普通成员移出房间。
+
+入参：
+
+```text
+roomId
+memberId
+```
+
+校验：
+
+1. 操作人必须是房主。
+2. 房间必须为 active。
+3. 只能移出 active 普通成员，不能移出房主。
+4. 移出后成员状态为 removed，积分和历史记录保留，但不再参与记分、转移或批量选择。
+
+### 9.7 updateNickname
 
 用途：成员修改自己在房间内显示的昵称。
 
@@ -660,7 +710,7 @@ nickname
 4. 每名成员只能修改一次自己的昵称，修改后写入 `nicknameEdited: true`。
 5. 房主修改昵称时同步更新房间 `ownerNickname`。
 
-### 9.6 updateScore
+### 9.8 updateScore
 
 用途：单个成员加分或扣分。
 
@@ -680,7 +730,7 @@ amount
 3. 分值必须是正整数。
 4. 成员必须属于当前房间。
 
-### 9.7 batchUpdateScore
+### 9.9 batchUpdateScore
 
 用途：批量加分或扣分。
 
@@ -700,7 +750,7 @@ amount
 3. 所有成员必须属于当前房间。
 4. 分值必须是正整数。
 
-### 9.8 transferScore
+### 9.10 transferScore
 
 用途：公共积分和成员之间、成员和成员之间转移积分。
 
@@ -724,7 +774,7 @@ amount
 5. 如果公共积分作为来源，公共积分不能不足。
 6. 成员必须属于当前房间。
 
-### 9.9 batchTransferScore
+### 9.11 batchTransferScore
 
 用途：同一来源向一个或多个目标批量转移积分。目标只有一个时行为等同普通转移；目标多个时写入批量转移记录。
 
@@ -748,7 +798,7 @@ amount
 6. 如果公共积分作为来源，公共积分不能不足。
 7. 成员必须属于当前房间。
 
-### 9.10 undoLastAction
+### 9.12 undoLastAction
 
 用途：撤销指定的一条可撤销积分操作；未传 recordId 时兼容撤销最近一次可撤销积分操作。
 
@@ -766,7 +816,7 @@ recordId
 3. 原记录未被撤销。
 4. 原记录类型必须可撤销。
 
-### 9.11 closeRoom
+### 9.13 closeRoom
 
 用途：关闭房间。
 
@@ -781,25 +831,31 @@ roomId
 1. 操作人必须是房主。
 2. 房间状态必须为 active。
 
-### 9.12 cleanupExpiredRooms
+### 9.14 getHomeData
 
-用途：清理超过 7 天数据保留期的房间数据，可由定时触发器或运维命令调用。
-
-入参：
-
-```text
-limit
-```
+用途：首页读取当前用户资料和关联房间列表。
 
 规则：
 
-1. 优先查找 `purgeAt <= 当前时间` 的房间；兼容旧数据时，缺少 `purgeAt` 的房间按 `expireAt + 6 天 <= 当前时间` 清理。
-2. 删除对应 `score_records`。
-3. 删除对应 `room_members`。
-4. 删除对应 `rooms`。
-5. 单次清理数量必须限制上限，避免一次任务处理过多数据。
-6. 清理只作用于云数据库；小程序本地 `recentRooms` 历史入口不由清理任务删除，因此本地缓存可能指向已被云端清理的房间，前端需要给出可理解提示。
-7. 房间超过 24 小时但未满 7 天时，前端仍应从云端加载并展示房间数据，但所有加入、记分、转移、撤销、关闭和改名等写操作必须被禁止。
+1. 当前用户不存在时自动创建 `users/{openid}`。
+2. 根据 `users.roomIds` 读取对应 `rooms`。
+3. 找不到或超过 `hiddenAt` 的房间不展示。
+4. 将无效或已隐藏的 roomId 从 `users.roomIds` 中懒清理。
+5. 首页展示状态从 `rooms.members`、`rooms.status` 和 `expireAt` 派生。
+
+### 9.15 saveDefaultName
+
+用途：保存首页默认名。
+
+规则：
+
+1. 默认名最多 20 个字符。
+2. 只写入 `users.defaultName`。
+3. 不反向修改已加入房间里的成员昵称。
+
+### 9.16 cleanupExpiredRooms
+
+当前阶段不提供物理删除清理 action。房间超过 7 天后只从玩家视角隐藏，`rooms` 文档仍保留。
 
 ## 10. 页面细节
 
@@ -856,7 +912,7 @@ limit
 
 1. 房间信息区。
 2. 公共积分区。
-3. 成员排行榜。
+3. 成员列表。
 4. 快捷操作区。
 5. 最近记录区。
 6. 分享区。

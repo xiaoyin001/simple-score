@@ -1,287 +1,235 @@
-# 简单记分鸭业务架构与流程
+# 简单记分鸭当前架构
 
-版本：v0.1
-更新日期：2026-06-23
+本文档描述当前代码实现。小程序采用微信原生小程序 + 云开发，核心业务集中在 `scoreFunctions` 云函数中。
 
-## 1. 当前范围
+## 1. 架构目标
 
-当前版本实现需求文档中的第一版 MVP：
+当前架构收敛为两张业务表：
 
-1. 首页、创建房间、输入房间码加入、分享加入。
-2. 房间成员列表、排行榜、公共积分池。
-3. 房主单人加分、扣分。
-4. 房主批量加分、扣分。
-5. 公共积分和成员积分互转、成员之间转移。
-6. 最近 50 条操作记录。
-7. 撤销指定的一条可撤销积分变更。
-8. 房主权限、房间人数上限、房间状态和过期校验。
+```text
+users
+rooms
+```
 
-暂未实现：广告、结算图片、模板市场、长期历史导出、独立管理后台。
+核心原则：
 
-## 2. 目录结构
+1. `rooms` 是房间事实源，保存房间、成员、积分和最近记录。
+2. `users` 只保存用户基本资料和关联房间 ID。
+3. 前端不直接修改积分、成员关系或房间状态。
+4. 所有写操作都通过 `cloudfunctions/scoreFunctions/index.js` 事务处理。
+5. 房间页只监听当前 `rooms/{roomId}` 文档。
+6. 每次成功业务操作都写入 `rooms.records`。
+7. 撤销按原记录 `scoreChanges` 反向计算，不用旧快照覆盖当前分数。
+8. 房间 24 小时后只读，7 天后从玩家视角隐藏，不物理删除房间文档。
+
+## 2. 小程序目录
 
 ```text
 miniprogram/
-  app.js
-  app.json
-  app.wxss
-  pages/
-    index/          首页
-    create-room/    创建房间
-    join-room/      加入房间
-    room/           房间详情和记分操作
-    records/        操作记录
-  utils/
-    api.js          云函数调用封装
+  pages/index/        首页、默认名、最近房间
+  pages/create-room/  创建房间
+  pages/join-room/    输入房间码或分享路径加入
+  pages/room/         房间详情、记分、转移、审批、撤销
+  pages/records/      最近记录
+  utils/api.js        云函数调用封装
+  utils/records.js    记录展示格式化
+
 cloudfunctions/
-  scoreFunctions/   记分业务云函数
-docs/
-  codex-workflow.md Codex 迭代工作流
-  requirements.md   产品需求
-  architecture.md   业务架构与流程
+  scoreFunctions/
+    index.js          业务 action 分发和事务写入
 ```
 
-## 3. 前端页面流程
+## 3. 数据集合
 
-### 3.1 首页
+### 3.1 users
 
-路径：`pages/index/index`
-
-职责：
-
-1. 展示产品名和定位。
-2. 提供创建房间、输入房间码、扫码加入入口。
-3. 展示最近进入过的房间。
-4. 接收分享路径中的 `roomId` 或 `roomCode`，跳转加入流程。
-5. 展示默认名设置区，用户可直接编辑本地默认名。
-6. 当前默认名保存在本地 `userProfile.defaultName` 中，不作为云端账号资料单独维护。
-7. 默认名输入时只更新草稿，点击保存后才写入本地缓存。
-8. 默认名不能为空，最多 20 个字符；未保存默认名时，前端使用“我”作为创建或加入房间的昵称兜底。保存成功后首页提示“默认名已保存”。
-
-### 3.2 创建房间
-
-路径：`pages/create-room/index`
-
-提交字段：
-
-```text
-name
-memberLimit
-publicScore
-nickname
-```
-
-`nickname` 默认读取首页设置的默认名，未保存默认名时使用“我”。用户仍可在创建页临时改成本房间内显示名。
-
-成功后：
-
-1. 写入本地最近房间。
-2. 跳转到房间页。
-
-### 3.3 加入房间
-
-路径：`pages/join-room/index`
-
-支持来源：
-
-1. 用户手动输入房间码。
-2. 首页扫码结果。
-3. 分享路径参数。
-
-成功后：
-
-1. 写入本地最近房间。
-2. 跳转到房间页。
-
-加入页的 `nickname` 默认读取首页设置的默认名，未保存默认名时使用“我”；用户在加入页修改昵称只影响本次加入，不自动改写首页默认名。前端不处理微信头像或授权资料，也不再向创建或加入请求传递头像字段。
-
-### 3.4 房间页
-
-路径：`pages/room/index`
-
-职责：
-
-1. 展示房间名称、房间码、人数、公共积分池。
-2. 支持点击展示房间二维码，二维码内容为房间码，其他成员可通过首页“扫码加入”扫描加入。
-3. 展示成员排行榜。
-4. 展示最近记录，包含操作类型、操作人、对象、分值、时间和撤销状态；房间页每页展示 5 条。
-5. 房主可执行单人加扣分、批量加扣分、积分转移、指定记录撤销和关闭房间。
-6. 普通成员可查看、分享，并发起受限积分转移：自己的积分转给他人或公共积分池、公共积分池转给自己。
-7. 当前成员仍有一次改名机会时，在本人昵称旁显示编辑 icon 按钮；改名通过云函数 `updateNickname` 完成，前端不直接写成员数据。
-8. 最近房间入口来自本地 `recentRooms` 缓存，可能指向已被云端清理的房间；房间不存在时只提示用户，不删除本地缓存。
-9. 房间页通过 CloudBase 数据库 `watch()` 监听当前房间相关数据：`rooms` 按 `_id + memberOpenids` 监听当前房间，`room_members` 按 `roomId + active` 监听当前成员，`score_records` 按 `roomId` 监听当前房间记录。
-10. 监听只负责展示同步；客户端不直接写 `rooms`、`room_members` 或 `score_records`。页面隐藏或卸载时关闭 watcher，重新显示时重新建立监听。
-11. 云数据库权限必须允许当前房间成员读取对应房间数据，但写权限仍应通过云函数收口。
-
-### 3.5 记录页
-
-路径：`pages/records/index`
-
-职责：
-
-1. 展示最近 50 条操作记录。
-2. 展示操作类型、操作人、对象、分值、时间、撤销状态和可撤销记录入口。
-3. 转移类记录根据目标积分变化展示来源和去向；当前用户参与时，前端将该成员显示为“我”。
-
-## 4. 云函数
-
-业务云函数：`scoreFunctions`
-
-前端统一通过 `miniprogram/utils/api.js` 调用：
+用户表只保存用户自己的资料和关联房间索引。
 
 ```js
-callScoreFunction(type, data)
+{
+  _id: "用户 openid",
+  openid: "用户 openid",
+  defaultName: "首页默认名",
+  roomIds: ["用户创建、加入或申请过的房间 ID"],
+  createdAt: Date,
+  updatedAt: Date
+}
 ```
 
-小程序启动时通过 `wx.cloud.init({ traceUser: true })` 初始化云开发，并使用开发者工具当前关联的小程序云环境。前端不再包含本地后端模式、本地模拟 openid 或本地服务地址配置。
+`users` 不保存房间名、房间码、角色、成员状态、积分、房间关闭状态或过期状态。这些信息都从 `rooms` 读取并派生。
 
-所有记分、权限、房间状态、成员关系和记录写入仍由 `scoreFunctions` 处理，前端只负责展示、输入和调用云函数。
+### 3.2 rooms
 
-当前已验证的云开发环境 ID 为 `cloud1-d0g5o9l1ada4cc67e`。CloudBase CLI 登录、只读检查和部署命令统一记录在 `docs/cloudbase-access.md`。
+房间表保存完整房间事实。
 
-当前操作类型：
+```js
+{
+  _id: "房间 ID，当前等于 roomCode",
+  roomCode: "房间码",
+  name: "房间名称",
+  ownerOpenid: "房主 openid",
+  memberLimit: 12,
+  requireApproval: false,
+  status: "active",
+  publicScore: 0,
+  sequence: 1,
+  members: [],
+  records: [],
+  createdAt: Date,
+  updatedAt: Date,
+  expireAt: Date,
+  hiddenAt: Date,
+  closedAt: null,
+  version: 1
+}
+```
+
+`status` 只保存 `active` 或 `closed`。超过 `expireAt` 后由云函数和前端视图判定为只读，不再把房间状态物理改成 expired。
+
+### 3.3 members
+
+成员直接内嵌在 `rooms.members` 中。
+
+```js
+{
+  openid: "成员 openid",
+  nickname: "房间内昵称",
+  role: "owner 或 member",
+  status: "active / pending / removed / rejected",
+  score: 0,
+  joinOrder: 1,
+  nicknameEdited: false,
+  joinedAt: Date,
+  updatedAt: Date,
+  leftAt: null
+}
+```
+
+状态规则：
+
+1. `active` 计入人数，可参与记分或转移。
+2. `pending` 不计入人数，房主可见审批卡。
+3. `removed` 不计入人数，保留历史结果，只能查看。
+4. `rejected` 不计入人数，保留申请结果，只能查看提示。
+
+### 3.4 records
+
+记录直接内嵌在 `rooms.records` 中，当前保留最近 50 条。
+
+```js
+{
+  recordId: "记录 ID",
+  sequence: 1,
+  type: "member_add",
+  operatorOpenid: "操作人 openid",
+  operatorNickname: "操作人昵称",
+  amount: 5,
+  scoreChanges: [],
+  isUndone: false,
+  undoOfRecordId: "",
+  undoneByRecordId: "",
+  createdAt: Date
+}
+```
+
+积分变化结构：
+
+```js
+{
+  targetType: "member 或 public",
+  openid: "成员 openid",
+  nickname: "成员昵称",
+  delta: 5
+}
+```
+
+前端兼容展示时会把记录补充为 `_id`、`targets` 等视图字段，但事实字段是 `recordId` 和 `scoreChanges`。
+
+## 4. 云函数 action
+
+`scoreFunctions` 支持以下 action：
 
 ```text
-login / getOpenId
+getOpenId
+getHomeData
+saveDefaultName
+getRoom
+getRoomPreview
 createRoom
 joinRoom
-getRoom
 updateNickname
 updateScore
 batchUpdateScore
-transferScore
 batchTransferScore
+transferScore
 undoLastAction
+reviewJoinRequest
+removeMember
 closeRoom
-cleanupExpiredRooms
 ```
 
-## 5. 数据集合
+写操作统一流程：
 
-云函数会尝试自动创建集合。如果线上环境限制自动创建，需要在云开发控制台手动创建。
+1. 读取当前用户 openid。
+2. 在事务内读取最新 `rooms/{roomId}`。
+3. 校验房间存在、未关闭、未超过 `expireAt`。
+4. 校验操作者权限、成员状态、人数上限、昵称重名和公共积分余额。
+5. 基于最新 room 计算成员积分和公共积分。
+6. `sequence + 1` 并生成记录。
+7. 写回整个 room 文档。
+8. 创建或加入房间后，把 `roomId` 写入 `users.roomIds`。
 
-### 5.1 rooms
+当前阶段不维护复杂请求幂等表。前端通过 `submitting` 禁用按钮减少重复提交；如果重复请求实际成功，房主可撤销多余记录。
+
+## 5. 权限
+
+房主可以审批、加扣分、批量记分、任意合法转移、撤销、移出成员和关闭房间。
+
+普通 active 成员可以查看、分享、修改自己昵称一次、将自己的积分转给其他 active 成员或公共积分池，也可以从公共积分池转给自己。
+
+pending、removed、rejected 成员只能查看对应状态和历史结果，不能记分、转移或改名。
+
+## 6. 同步
+
+房间页同步只监听当前房间文档：
+
+```js
+wx.cloud.database()
+  .collection("rooms")
+  .where({ _id: roomId })
+  .watch(...)
+```
+
+进入房间页时先调用 `getRoom` 获取权威快照。写操作成功后云函数返回最新 `roomView`，操作端立即应用。其他在线端通过 `rooms` watcher 收到同一房间文档变化后重新派生成员列表、待确认列表和记录列表。
+
+页面隐藏或卸载时关闭 watcher。watch 短暂空快照时保留当前页面，并静默调用一次 `getRoom` 兜底。
+
+## 7. 生命周期
 
 ```text
-_id
-roomCode
-name
-ownerOpenid
-ownerNickname
-memberOpenids
-memberLimit
-publicScore
-status
-createdAt
-updatedAt
-expireAt
-purgeAt
-closedAt
-version
+expireAt：创建时间 + 24 小时，超过后只读。
+hiddenAt：创建时间 + 7 天，超过后首页不展示并从 users.roomIds 懒清理。
+closedAt：房主主动关闭时间。
 ```
 
-`status`：
+超过 `expireAt` 后可以查看，但不能加入、审批、改名、加扣分、批量记分、转移、撤销或关闭。
+
+超过 `hiddenAt` 后首页不展示；旧链接进入时提示房间已归档；`rooms` 文档仍保留。
+
+## 8. 自动检查
+
+每次非简单变更至少运行：
 
 ```text
-active
-closed
-expired
+node --check cloudfunctions/scoreFunctions/index.js
+node --check miniprogram/utils/api.js
+node --check miniprogram/pages/index/index.js
+node --check miniprogram/pages/create-room/index.js
+node --check miniprogram/pages/join-room/index.js
+node --check miniprogram/pages/room/index.js
+node --check miniprogram/pages/records/index.js
+模板残留关键词扫描
+高风险文案扫描
 ```
 
-### 5.2 room_members
-
-```text
-_id
-roomId
-openid
-nickname
-score
-role
-nicknameEdited
-joinedAt
-updatedAt
-leftAt
-status
-```
-
-`role`：
-
-```text
-owner
-member
-```
-
-`status`：
-
-```text
-active
-left
-```
-
-### 5.3 score_records
-
-```text
-_id
-roomId
-operatorOpenid
-operatorNickname
-type
-targets
-amount
-beforeSnapshot
-afterSnapshot
-remark
-isUndone
-undoRecordId
-createdAt
-```
-
-## 6. 核心业务规则
-
-### 6.1 房间
-
-1. 房间名称不能为空，最多 20 个字符。
-2. 人数上限为 2 到 12。
-3. 房间默认可操作有效期为 24 小时，`expireAt` 控制加入和写操作截止时间。
-4. 已关闭或已过期房间不可继续修改积分；过期但未清理的房间仍可只读查看房间信息、成员积分和操作记录。
-5. 云端房间数据默认保留 7 天，`purgeAt` 控制 `cleanupExpiredRooms` 的物理清理时间；清理范围包含云端房间、成员和记录，不清理小程序本地 `recentRooms`。
-6. 同一用户重复加入同一房间时返回已有成员，不重复占用名额。
-7. `memberOpenids` 记录当前房间 active 成员 openid，用于 CloudBase 数据库监听的房间级读权限判断；创建、加入和 `getRoom` 读取时由云函数维护或回填。
-
-### 6.2 权限
-
-1. 使用微信 openid 识别用户。
-2. 只有房主可以加扣分、批量记分、撤销操作和关闭房间。
-3. 普通成员只能将自己的积分转给其他成员或公共积分池，也只能从公共积分池转给自己。
-4. 权限判断全部在云函数中完成。
-5. 成员只能通过 `updateNickname` 修改自己的昵称一次；云函数以当前 openid 查找 active 成员并校验 `nicknameEdited`。
-6. 数据库安全规则应允许 `memberOpenids` 中的房间成员读取对应房间、成员和记录数据；客户端写权限仍保持关闭，写操作只通过云函数。
-
-### 6.3 积分
-
-1. 成员初始积分为 0。
-2. 分值必须是 1 到 9999 的整数。
-3. 允许成员积分变成负数。
-4. 公共积分作为转出来源时不允许不足。
-5. 积分变更使用云函数事务处理，并写入操作记录。
-6. 房间页不提供独立转移区；成员排行内的成员卡片提供单目标转移入口，成员排行头部提供批量转移模式。
-7. 房间页成员转移默认从当前用户自己转出；公共积分池区域提供转入公共积分池和从公共积分池转给当前用户两个入口。
-8. `batchTransferScore` 对同一来源到多个目标的转移做事务处理，每个目标获得相同分值，来源扣除目标数乘以分值。
-
-### 6.4 撤销
-
-1. 房主可以撤销指定的一条未撤销积分变更，前端通过 `recordId` 指定原记录。
-2. 未传 `recordId` 时，云函数兼容撤销最近一次未撤销的积分变更。
-3. 撤销使用原记录 `beforeSnapshot` 与 `afterSnapshot` 的差值，对当前房间和成员积分执行反向增量更新；不会直接把当前积分覆盖为旧快照。
-4. 撤销不会删除原记录，而是新增 `undo` 记录。
-5. 新增 `undo` 记录会保存撤销前的当前状态和撤销后的状态，便于记录页展示真实反向流向。
-6. 原记录会标记为 `isUndone: true`。
-
-## 7. 发布前检查
-
-1. 微信开发者工具当前项目已关联可用的云开发环境。
-2. `scoreFunctions` 已上传并部署云端安装依赖。
-3. `cleanupExpiredRooms` 定时触发器已创建，计划为每小时执行一次。
-4. 云数据库集合存在：`rooms`、`room_members`、`score_records`。
-5. 微信开发者工具中完成创建、加入、扫码加入、二维码展示、加扣分、批量、转移、撤销、关闭和分享验证。
-6. 页面文案不出现 `docs/requirements.md` 第 12.4 节列出的高风险表达。
+人工仍需在微信开发者工具中验证创建、加入、分享加入、审批、记分、转移、撤销、关闭和权限限制。

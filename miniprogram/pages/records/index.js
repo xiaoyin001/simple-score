@@ -1,4 +1,8 @@
 const { callScoreFunction, showError } = require("../../utils/api");
+const {
+  formatRecord: formatSharedRecord,
+  sortRecordsForView,
+} = require("../../utils/records");
 
 // 操作类型到记录页展示文案的映射。
 const TYPE_LABELS = {
@@ -24,6 +28,12 @@ const TYPE_LABELS = {
   room_created: "创建房间",
   // 成员加入房间。
   member_joined: "加入房间",
+  // 成员申请加入。
+  member_join_requested: "申请加入",
+  // 成员加入申请被拒绝。
+  member_join_rejected: "暂不加入",
+  // 房主移出成员。
+  member_removed: "成员移出",
   // 关闭房间。
   room_closed: "关闭房间",
 };
@@ -232,8 +242,8 @@ Page({
         const currentMemberId = (currentMember && currentMember._id) || "";
         this.setData({
           room: result.room,
-          records: (result.recentRecords || []).map((record) =>
-            formatRecord(record, currentMemberId)
+          records: sortRecordsForView(result.recentRecords || []).map((record) =>
+            formatSharedRecord(record, currentMemberId, { timeMode: "full", zeroText: "0" })
           ),
           isOwner: result.currentUserRole === "owner",
           loading: false,

@@ -7,7 +7,6 @@ project.private.config.json
 # 本地环境和凭证
 .env
 .env.*
-!.env.example
 *.local
 
 # 云开发 / CLI 本地缓存
@@ -16,6 +15,12 @@ project.private.config.json
 
 # 本地 Codex 规则
 AGENTS.md
+
+# 本地 Codex / 自动化辅助文件
+/package.json
+/package-lock.json
+/scripts/
+/docs/miniprogram-automation.md
 
 # 日志文件
 *.log
@@ -32,6 +37,9 @@ Thumbs.db
 # 临时文件
 tmp/
 minitest/
+test-artifacts/
+__pycache__/
+*.pyc
 
 # 构建和覆盖率产物
 dist/

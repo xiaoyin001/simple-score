@@ -3,19 +3,32 @@ const {
   getStoredProfile,
   saveUserProfile,
 } = require("../../utils/profile");
+const { buildAvatarView } = require("../../utils/avatar");
+const { callScoreFunction, showError } = require("../../utils/api");
 
 function buildProfileView(profile) {
   const defaultName = String((profile && profile.defaultName) || "").trim();
+  const displayName = defaultName || DEFAULT_ROOM_NICKNAME;
   return {
     userProfile: profile,
-    profileDraftName: defaultName || DEFAULT_ROOM_NICKNAME,
+    profileDraftName: displayName,
     profileSavedName: defaultName,
+    profileAvatar: buildAvatarView({
+      nickname: displayName,
+      seed: displayName,
+    }),
   };
 }
 
-function getValidRecentRooms() {
-  const rooms = wx.getStorageSync("recentRooms") || [];
-  return rooms.filter((room) => room && room.roomId);
+function getValidRecentRooms(rooms) {
+  const sourceRooms = rooms || wx.getStorageSync("recentRooms") || [];
+  return sourceRooms.map((room) => ({
+    roomId: room.roomId || room._id,
+    roomCode: room.roomCode,
+    name: room.name || "记分房间",
+    status: room.status || "active",
+    memberStatus: room.memberStatus || "",
+  })).filter((room) => room && room.roomId);
 }
 
 // 从扫码结果或分享路径中读取指定查询参数。
@@ -33,8 +46,10 @@ Page({
     // 默认名草稿，点击保存后才写入本地缓存。
     profileDraftName: DEFAULT_ROOM_NICKNAME,
     profileSavedName: "",
+    profileAvatar: buildAvatarView({ nickname: DEFAULT_ROOM_NICKNAME }),
     profileSaving: false,
     profileError: "",
+    homeLoading: false,
   },
 
   // 处理分享路径携带的房间参数，直接进入加入流程。
@@ -55,13 +70,40 @@ Page({
       ...buildProfileView(userProfile),
       recentRooms: getValidRecentRooms(),
     });
+    this.loadHomeData();
+  },
+
+  loadHomeData() {
+    if (this.data.homeLoading) return;
+    this.setData({ homeLoading: true });
+    callScoreFunction("getHomeData")
+      .then((result) => {
+        const defaultName = String((result.user && result.user.defaultName) || "").trim();
+        if (defaultName) {
+          const userProfile = saveUserProfile({ defaultName });
+          this.setData(buildProfileView(userProfile));
+        }
+        this.setData({
+          recentRooms: getValidRecentRooms(result.rooms || []),
+          homeLoading: false,
+        });
+      })
+      .catch((error) => {
+        this.setData({ homeLoading: false });
+        showError(error);
+      });
   },
 
   // 只更新草稿，不直接写入本地缓存。
   onProfileDraftInput(event) {
     const draftName = event.detail.value;
+    const displayName = String(draftName || "").trim() || DEFAULT_ROOM_NICKNAME;
     this.setData({
       profileDraftName: draftName,
+      profileAvatar: buildAvatarView({
+        nickname: displayName,
+        seed: displayName,
+      }),
       profileError: String(draftName || "").trim() ? "" : "默认名不能为空",
     });
   },
@@ -84,16 +126,26 @@ Page({
       profileError: "",
     });
 
-    const userProfile = saveUserProfile({ defaultName });
-    this.setData({
-      ...buildProfileView(userProfile),
-      profileSaving: false,
-      profileError: "",
-    });
-    wx.showToast({
-      title: "默认名已保存",
-      icon: "none",
-    });
+    callScoreFunction("saveDefaultName", { defaultName })
+      .then(() => {
+        const userProfile = saveUserProfile({ defaultName });
+        this.setData({
+          ...buildProfileView(userProfile),
+          profileSaving: false,
+          profileError: "",
+        });
+        wx.showToast({
+          title: "默认名已保存",
+          icon: "none",
+        });
+      })
+      .catch((error) => {
+        this.setData({
+          profileSaving: false,
+          profileError: error.message || "保存失败",
+        });
+        showError(error);
+      });
   },
 
   // 跳转到创建房间页。

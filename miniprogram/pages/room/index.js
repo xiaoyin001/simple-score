@@ -1,5 +1,10 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
 const { buildQrRows } = require("../../utils/qrcode");
+const { buildAvatarView } = require("../../utils/avatar");
+const {
+  formatRecord: formatRecordForView,
+  sortRecordsForView,
+} = require("../../utils/records");
 
 // 操作类型到页面展示文案的映射。
 const TYPE_LABELS = {
@@ -25,6 +30,12 @@ const TYPE_LABELS = {
   room_created: "创建房间",
   // 成员加入房间。
   member_joined: "加入房间",
+  // 成员申请加入。
+  member_join_requested: "申请加入",
+  // 成员加入申请被拒绝。
+  member_join_rejected: "暂不加入",
+  // 房主移出成员。
+  member_removed: "成员移出",
   // 关闭房间。
   room_closed: "关闭房间",
 };
@@ -199,7 +210,7 @@ function getRecordTargetsText(record, currentMemberId) {
 }
 
 // 将原始操作记录转换为页面展示结构。
-function formatRecord(record, currentMemberId) {
+function formatLocalRecord(record, currentMemberId) {
   return {
     ...record,
     displayType: TYPE_LABELS[record.type] || record.type,
@@ -230,12 +241,36 @@ function buildRecentRecordPageState(records, page) {
   };
 }
 
+function getMemberRoleLabel(member) {
+  return member.role === "owner" ? "房主" : "成员";
+}
+
 function normalizeMemberForView(member, currentMemberId, room) {
+  const memberId = member._id || member.memberId || member.openid;
+  const status = member.status || "active";
+  const isActive = status === "active";
+  const isPending = status === "pending";
+  const isRemoved = status === "removed";
+  const isCurrent = memberId === currentMemberId;
   return {
     ...member,
+    _id: memberId,
+    memberId,
+    status,
+    isActive,
+    isPending,
+    isRemoved,
+    isCurrent,
+    roleLabel: getMemberRoleLabel(member),
+    ...buildAvatarView({
+      nickname: member.nickname,
+      seed: member.openid || member._id || member.nickname,
+      muted: isRemoved,
+    }),
     scoreTone: getScoreTone(member.score || 0),
     canRename:
-      member._id === currentMemberId &&
+      isCurrent &&
+      isActive &&
       !member.nicknameEdited &&
       room &&
       room.status === "active",
@@ -244,22 +279,36 @@ function normalizeMemberForView(member, currentMemberId, room) {
 
 function sortMembersForView(members) {
   return [...members].sort((a, b) => {
-    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
     return new Date(a.joinedAt || 0).getTime() - new Date(b.joinedAt || 0).getTime();
   });
 }
 
-function getTimeValue(value) {
-  if (!value) return 0;
-  if (typeof value.getTime === "function") return value.getTime();
-  if (value instanceof Date) return value.getTime();
-  return new Date(value).getTime() || 0;
-}
-
-function sortRecordsForView(records) {
-  return [...(records || [])]
-    .sort((a, b) => getTimeValue(b.createdAt) - getTimeValue(a.createdAt))
-    .slice(0, 50);
+function buildMemberState(rawMembers, currentMemberId, room) {
+  const normalizedMembers = sortMembersForView(
+    (rawMembers || []).map((member) =>
+      normalizeMemberForView(member, currentMemberId, room)
+    )
+  );
+  const pendingMembers = normalizedMembers.filter((member) => member.isPending);
+  const members = normalizedMembers
+    .filter((member) => member.isActive || member.isRemoved)
+    .map((member, index) => {
+      const joinOrder = index + 1;
+      const statusText = member.isRemoved
+        ? "已移出 · 历史记录保留"
+        : `第 ${joinOrder} 位加入 · ${member.roleLabel}`;
+      return {
+        ...member,
+        joinOrder,
+        statusText,
+        canSelect: member.isActive,
+      };
+    });
+  return {
+    members,
+    pendingMembers,
+    activeMemberCount: members.filter((member) => member.isActive).length,
+  };
 }
 
 function getRecordPublicScore(record) {
@@ -301,6 +350,10 @@ Page({
     showSyncStatus: false,
     // 当前活跃成员列表。
     members: [],
+    // 等待房主确认的加入申请。
+    pendingMembers: [],
+    // 当前 active 成员数量，已移出成员不占名额。
+    activeMemberCount: 0,
     // 最近操作记录完整列表，用于房间页分页。
     allRecentRecords: [],
     // 最近操作记录展示列表。
@@ -323,6 +376,10 @@ Page({
     canTransfer: false,
     // 当前用户在房间内的成员 ID。
     currentMemberId: "",
+    // 当前用户在房间内的成员状态。
+    currentMemberStatus: "",
+    // 当前用户 openid，用于房间读模型监听权限过滤。
+    currentOpenid: "",
     // 是否处于批量记分选择模式。
     batchMode: false,
     // 批量记分已选成员 ID 列表。
@@ -367,15 +424,20 @@ Page({
   },
 
   onShow() {
-    if (this.data.room) this.startRoomWatchers();
+    if (this.data.room) {
+      this.startRoomWatchers();
+      this.scheduleSilentRoomReload(300, Number(this.data.room.sequence || 0));
+    }
   },
 
   onHide() {
     this.stopRoomWatchers();
+    this.clearScheduledRoomReload();
   },
 
   onUnload() {
     this.stopRoomWatchers();
+    this.clearScheduledRoomReload();
   },
 
   updateSyncStatus(status) {
@@ -394,14 +456,12 @@ Page({
   },
 
   startRoomWatchers() {
-    if (this.roomWatchers || !this.data.roomId) return;
+    if (this.roomWatchers || !this.data.roomId || !this.data.currentOpenid) return;
     const db = wx.cloud.database();
-    const _ = db.command;
     const roomId = this.data.roomId;
     const onError = (source) => (error) => {
       console.error(`[room-sync] ${source} watch failed`, error);
-      this.updateSyncStatus("error");
-      this.stopRoomWatchers({ keepStatus: true });
+      this.scheduleRoomViewRecovery();
     };
 
     this.updateSyncStatus("connecting");
@@ -412,29 +472,10 @@ Page({
           .collection("rooms")
           .where({
             _id: roomId,
-            memberOpenids: _.in(["{openid}"]),
           })
           .watch({
             onChange: (snapshot) => this.applyRoomSnapshot(snapshot),
             onError: onError("rooms"),
-          })
-      );
-      watchers.push(
-        db
-          .collection("room_members")
-          .where({ roomId, status: "active" })
-          .watch({
-            onChange: (snapshot) => this.applyMembersSnapshot(snapshot),
-            onError: onError("room_members"),
-          })
-      );
-      watchers.push(
-        db
-          .collection("score_records")
-          .where({ roomId })
-          .watch({
-            onChange: (snapshot) => this.applyRecordsSnapshot(snapshot),
-            onError: onError("score_records"),
           })
       );
       this.roomWatchers = watchers;
@@ -452,19 +493,134 @@ Page({
       if (watcher && typeof watcher.close === "function") watcher.close();
     });
     this.roomWatchers = null;
+    if (this.roomViewRecoveryTimer) {
+      clearTimeout(this.roomViewRecoveryTimer);
+      this.roomViewRecoveryTimer = null;
+    }
     if (!options.keepStatus) this.updateSyncStatus("closed");
+  },
+
+  clearScheduledRoomReload() {
+    if (this.roomReloadTimer) {
+      clearTimeout(this.roomReloadTimer);
+      this.roomReloadTimer = null;
+    }
+    this.pendingRoomReloadSequence = 0;
+  },
+
+  scheduleSilentRoomReload(delay = 300, minSequence = 0) {
+    const nextSequence = Number(minSequence || 0);
+    this.pendingRoomReloadSequence = Math.max(
+      Number(this.pendingRoomReloadSequence || 0),
+      nextSequence
+    );
+    if (this.roomReloadTimer) clearTimeout(this.roomReloadTimer);
+    this.roomReloadTimer = setTimeout(() => {
+      this.roomReloadTimer = null;
+      if (!this.data.roomId || !this.data.room) return;
+      const targetSequence = Number(this.pendingRoomReloadSequence || 0);
+      const currentSequence = Number((this.data.room && this.data.room.sequence) || 0);
+      this.pendingRoomReloadSequence = 0;
+      if (targetSequence && currentSequence >= targetSequence) return;
+      this.loadRoom({ silent: true });
+    }, delay);
   },
 
   applyRoomSnapshot(snapshot) {
     const room = (snapshot.docs || [])[0];
     if (!room || room._id !== this.data.roomId) {
-      this.updateSyncStatus("error");
+      this.scheduleRoomViewRecovery();
       return;
     }
-    this.setData({
+    this.applyRoomViewData({
       room,
+      members: room.members || [],
+      pendingMembers: (room.members || []).filter((member) => member.status === "pending"),
+      recentRecords: room.records || [],
+    });
+  },
+
+  applyRoomViewData(view) {
+    if (!view || !view.room) return;
+    if (this.roomViewRecoveryTimer) {
+      clearTimeout(this.roomViewRecoveryTimer);
+      this.roomViewRecoveryTimer = null;
+    }
+    const currentOpenid = this.data.currentOpenid || "";
+    const rawMembers = view.members || view.room.members || [];
+    const currentMember =
+      rawMembers.find((member) => currentOpenid && member.openid === currentOpenid) ||
+      rawMembers.find(
+        (member) =>
+          (member._id || member.memberId || member.openid) === this.data.currentMemberId
+      ) ||
+      null;
+    const currentMemberId =
+      (currentMember && (currentMember._id || currentMember.memberId || currentMember.openid)) ||
+      this.data.currentMemberId;
+    const isOwner =
+      !!(
+        (currentOpenid && view.room.ownerOpenid === currentOpenid) ||
+        (currentMember && currentMember.role === "owner") ||
+        this.data.isOwner
+      );
+    const memberState = buildMemberState(
+      rawMembers,
+      currentMemberId,
+      view.room
+    );
+    const sortedRecords = sortRecordsForView(view.recentRecords || view.room.records || []);
+    const formattedRecords = sortedRecords.map((record) =>
+      formatRecordForView(record, currentMemberId)
+    );
+    this.setData({
+      room: view.room,
+      ...memberState,
+      ...buildRecentRecordPageState(formattedRecords, this.data.recentRecordPage),
+      isOwner,
+      currentMemberId,
+      currentMemberStatus: (currentMember && currentMember.status) || this.data.currentMemberStatus,
+      canTransfer: !!(
+        currentMemberId &&
+        currentMember &&
+        currentMember.status === "active"
+      ),
     });
     this.updateSyncStatus("connected");
+  },
+
+  applyRoomViewSnapshot(snapshot) {
+    this.applyRoomSnapshot(snapshot);
+  },
+
+  applyWriteResult(result) {
+    if (result && result.roomView) this.applyRoomViewData(result.roomView);
+  },
+
+  applyRoomInboxSnapshot(snapshot) {
+    this.applyRoomInvalidationSnapshot(snapshot, "rooms");
+  },
+
+  applyRoomInvalidationSnapshot(snapshot, source) {
+    const event = (snapshot.docs || [])[0];
+    if (!event || event.roomId !== this.data.roomId) return;
+    const remoteSequence = Number(event.sequence || 0);
+    const localSequence = Number((this.data.room && this.data.room.sequence) || 0);
+    if (remoteSequence > localSequence) {
+      this.scheduleSilentRoomReload(600, remoteSequence);
+      return;
+    }
+    this.updateSyncStatus("connected");
+  },
+
+  scheduleRoomViewRecovery() {
+    if (this.roomViewRecoveryTimer) return;
+    this.updateSyncStatus("connecting");
+    this.roomViewRecoveryTimer = setTimeout(() => {
+      this.roomViewRecoveryTimer = null;
+      if (!this.data.roomId || !this.data.room) return;
+      this.loadRoom({ silent: true });
+    }, 1000);
   },
 
   applyMembersSnapshot(snapshot) {
@@ -473,12 +629,16 @@ Page({
       this.updateSyncStatus("error");
       return;
     }
-    const members = sortMembersForView(
-      docs.map((member) =>
-        normalizeMemberForView(member, this.data.currentMemberId, this.data.room)
-      )
-    );
-    this.setData({ members });
+    const currentMember = docs.find((member) => member._id === this.data.currentMemberId);
+    this.setData({
+      ...buildMemberState(docs, this.data.currentMemberId, this.data.room),
+      currentMemberStatus: (currentMember && currentMember.status) || this.data.currentMemberStatus,
+      canTransfer: !!(
+        this.data.currentMemberId &&
+        currentMember &&
+        currentMember.status === "active"
+      ),
+    });
     this.updateSyncStatus("connected");
   },
 
@@ -490,7 +650,7 @@ Page({
     }
     const sortedRecords = sortRecordsForView(docs);
     const formattedRecords = sortedRecords.map((record) =>
-      formatRecord(record, this.data.currentMemberId)
+      formatRecordForView(record, this.data.currentMemberId)
     );
     const nextData = buildRecentRecordPageState(
       formattedRecords,
@@ -508,44 +668,53 @@ Page({
   },
 
   // 从云函数加载房间、成员、记录和当前用户权限。
-  loadRoom() {
+  loadRoom(options = {}) {
     if (!this.data.roomId) {
       wx.showToast({ title: "缺少房间 ID", icon: "none" });
       return Promise.resolve();
     }
-    this.setData({ loading: true });
+    if (options.silent && this.silentRoomLoading) return Promise.resolve();
+    if (options.silent) this.silentRoomLoading = true;
+    if (!options.silent) this.setData({ loading: true });
     return callScoreFunction("getRoom", { roomId: this.data.roomId })
       .then((result) => {
         const isOwner = result.currentUserRole === "owner";
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
-        const members = (result.members || []).map((member) =>
-          normalizeMemberForView(member, currentMemberId, result.room)
+        const currentOpenid = (currentMember && currentMember.openid) || "";
+        const memberState = buildMemberState(result.members || [], currentMemberId, result.room);
+        const formattedRecords = sortRecordsForView(result.recentRecords || []).map((record) =>
+          formatRecordForView(record, currentMemberId)
         );
-        const formattedRecords = (result.recentRecords || []).map((record) =>
-          formatRecord(record, currentMemberId)
-        );
-        this.setData({
+        const nextData = {
           room: result.room,
-          members,
+          ...memberState,
           ...buildRecentRecordPageState(formattedRecords, 1),
           isOwner,
-          canTransfer: !!currentMemberId,
+          canTransfer: !!(currentMemberId && currentMember && currentMember.status === "active"),
           currentMemberId,
-          transferDialogVisible: false,
-          transferMode: false,
-          transferSelected: [],
-          transferTargets: [],
-          transferSourceType: "member",
-          transferSourceMemberId: currentMemberId,
-          transferSourceLabel: "我",
-          transferTargetSummary: "未选择目标",
-          transferTargetCount: 0,
+          currentOpenid,
+          currentMemberStatus: (currentMember && currentMember.status) || "",
           loading: false,
           loadFailed: false,
           loadErrorText: "",
-        });
+        };
+        if (!options.silent) {
+          Object.assign(nextData, {
+            transferDialogVisible: false,
+            transferMode: false,
+            transferSelected: [],
+            transferTargets: [],
+            transferSourceType: "member",
+            transferSourceMemberId: currentMemberId,
+            transferSourceLabel: "我",
+            transferTargetSummary: "未选择目标",
+            transferTargetCount: 0,
+          });
+        }
+        this.setData(nextData);
         this.startRoomWatchers();
+        this.updateSyncStatus("connected");
         saveRecentRoom({
           roomId: result.room._id,
           roomCode: result.room.roomCode,
@@ -554,16 +723,24 @@ Page({
       })
       .catch((error) => {
         const isRoomMissing = error.code === "ROOM_NOT_FOUND";
+        const isAccessDenied = error.code === "ROOM_ACCESS_DENIED";
+        const shouldLeaveRoomView = isRoomMissing || isAccessDenied;
         this.setData({
           loading: false,
           loadFailed: true,
+          room: shouldLeaveRoomView ? null : this.data.room,
           loadErrorText: isRoomMissing
             ? "云端房间可能已过期并被清理，本地历史入口会保留。"
-            : error.message || "房间加载失败",
+            : isAccessDenied
+              ? "你当前不在该房间内，可能需要重新提交加入申请。"
+              : error.message || "房间加载失败",
         });
-        if (!isRoomMissing) {
-          showError(error);
+        if (!isRoomMissing && !isAccessDenied) {
+          if (!options.silent) showError(error);
         }
+      })
+      .finally(() => {
+        if (options.silent) this.silentRoomLoading = false;
       });
   },
 
@@ -654,7 +831,8 @@ Page({
           nickname: nextNickname,
         });
       })
-      .then(() => {
+      .then((result) => {
+        this.applyWriteResult(result);
         wx.showToast({ title: "已修改", icon: "success" });
       })
       .catch((error) => {
@@ -707,7 +885,8 @@ Page({
           amount,
         });
       })
-      .then(() => {
+      .then((result) => {
+        this.applyWriteResult(result);
         wx.showToast({ title: "已更新", icon: "success" });
       })
       .catch((error) => {
@@ -744,14 +923,20 @@ Page({
   // 更新成员选择列表，按当前模式分别用于批量记分或批量转移。
   onMemberSelectChange(event) {
     const values = event.detail.value;
+    const activeMemberIds = this.data.members
+      .filter((member) => member.isActive)
+      .map((member) => member._id);
     if (this.data.transferMode) {
       this.setData({
-        transferSelected: values.filter((memberId) => memberId !== this.data.currentMemberId),
+        transferSelected: values.filter(
+          (memberId) =>
+            memberId !== this.data.currentMemberId && activeMemberIds.includes(memberId)
+        ),
       });
       return;
     }
     this.setData({
-      batchSelected: values,
+      batchSelected: values.filter((memberId) => activeMemberIds.includes(memberId)),
     });
   },
 
@@ -775,7 +960,8 @@ Page({
           amount,
         });
       })
-      .then(() => {
+      .then((result) => {
+        this.applyWriteResult(result);
         wx.showToast({ title: "已更新", icon: "success" });
         this.setData({ batchSelected: [], batchMode: false });
       })
@@ -871,7 +1057,10 @@ Page({
       selectedSet[memberId] = true;
     });
     const targets = this.data.members
-      .filter((member) => selectedSet[member._id] && member._id !== this.data.currentMemberId)
+      .filter(
+        (member) =>
+          member.isActive && selectedSet[member._id] && member._id !== this.data.currentMemberId
+      )
       .map((member) => ({
         type: "member",
         memberId: member._id,
@@ -920,7 +1109,8 @@ Page({
       })),
       amount,
     })
-      .then(() => {
+      .then((result) => {
+        this.applyWriteResult(result);
         wx.showToast({ title: "已转移", icon: "success" });
         this.setData({
           transferDialogVisible: false,
@@ -942,6 +1132,69 @@ Page({
       });
   },
 
+  reviewJoinRequest(event) {
+    if (this.data.submitting) return;
+    const { memberId, action, nickname } = event.currentTarget.dataset;
+    const approve = action === "approve";
+    wx.showModal({
+      title: approve ? "同意加入" : "暂不加入",
+      content: approve
+        ? `确认让 ${nickname || "该成员"} 加入房间？`
+        : `确认暂不让 ${nickname || "该成员"} 加入房间？`,
+      confirmText: approve ? "同意" : "确认",
+      success: (res) => {
+        if (!res.confirm) return;
+        this.setData({ submitting: true });
+        wx.showLoading({ title: "处理中" });
+        callScoreFunction("reviewJoinRequest", {
+          roomId: this.data.roomId,
+          memberId,
+          action,
+        })
+          .then((result) => {
+            this.applyWriteResult(result);
+            wx.showToast({
+              title: approve ? "已同意" : "已处理",
+              icon: "success",
+            });
+          })
+          .catch(showError)
+          .finally(() => {
+            wx.hideLoading();
+            this.setData({ submitting: false });
+          });
+      },
+    });
+  },
+
+  removeMember(event) {
+    if (this.data.submitting) return;
+    const { memberId, nickname } = event.currentTarget.dataset;
+    wx.showModal({
+      title: "移出成员",
+      content: `确认将 ${nickname || "该成员"} 移出房间？成员记录会保留。`,
+      confirmText: "移出",
+      success: (res) => {
+        if (!res.confirm) return;
+        this.setData({ submitting: true });
+        wx.showLoading({ title: "处理中" });
+        callScoreFunction("removeMember", {
+          roomId: this.data.roomId,
+          memberId,
+        })
+          .then((result) => {
+            this.applyWriteResult(result);
+            wx.showToast({ title: "已移出", icon: "success" });
+          })
+          .catch(showError)
+          .finally(() => {
+            wx.hideLoading();
+            this.setData({ submitting: false });
+          });
+      },
+    });
+  },
+
   // 房主撤销指定的一条可撤销积分记录。
   undoRecord(event) {
     if (this.data.submitting) return;
@@ -958,7 +1211,8 @@ Page({
           roomId: this.data.roomId,
           recordId,
         })
-          .then(() => {
+          .then((result) => {
+            this.applyWriteResult(result);
             wx.showToast({ title: "已撤销", icon: "success" });
           })
           .catch(showError)
@@ -980,7 +1234,8 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: "关闭中" });
         callScoreFunction("closeRoom", { roomId: this.data.roomId })
-          .then(() => {
+          .then((result) => {
+            this.applyWriteResult(result);
             wx.showToast({ title: "已关闭", icon: "success" });
           })
           .catch(showError)

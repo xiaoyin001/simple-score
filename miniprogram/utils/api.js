@@ -12,13 +12,14 @@ function normalizeResult(result) {
 
 // 统一调用记分业务云函数。
 function callScoreFunction(type, data = {}) {
+  const payload = {
+    type,
+    ...data,
+  };
   return wx.cloud
     .callFunction({
       name: "scoreFunctions",
-      data: {
-        type,
-        ...data,
-      },
+      data: payload,
     })
     .then((response) => {
       return normalizeResult(response.result || {});

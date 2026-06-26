@@ -12,10 +12,18 @@ page {
 
 .hero {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   gap: 20rpx;
   padding: 34rpx 0 22rpx;
+}
+
+.hero-icon {
+  flex-shrink: 0;
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 22rpx;
+  box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.12);
 }
 
 .hero-copy {
@@ -93,6 +101,68 @@ page {
   font-weight: 800;
 }
 
+.profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-top: 18rpx;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 70rpx;
+  height: 70rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.86);
+  border-radius: 50%;
+  color: #3b260f;
+  font-size: 28rpx;
+  font-weight: 900;
+  box-shadow: 0 8rpx 18rpx rgba(111, 74, 28, 0.12);
+  box-sizing: border-box;
+}
+
+.avatar-yellow {
+  background: linear-gradient(135deg, #ffe66d, #ffb23e);
+}
+
+.avatar-green {
+  background: linear-gradient(135deg, #73d99d, #2bb56e);
+  color: #ffffff;
+}
+
+.avatar-blue {
+  background: linear-gradient(135deg, #8ac8ff, #4b92df);
+  color: #ffffff;
+}
+
+.avatar-red {
+  background: linear-gradient(135deg, #ff9a8a, #ef6558);
+  color: #ffffff;
+}
+
+.avatar-muted {
+  background: #f1e8d8;
+  color: #8b7356;
+}
+
+.profile-preview-name {
+  color: #3b260f;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.profile-preview-desc {
+  margin-top: 6rpx;
+  color: #8a7358;
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .default-name-row {
   display: flex;
   align-items: center;
@@ -147,51 +217,6 @@ page {
 
 .default-name-hint.error {
   color: #b42318;
-}
-
-.mascot-card {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-  margin-top: 10rpx;
-  padding: 28rpx;
-  border: 2rpx solid rgba(90, 52, 24, 0.08);
-  border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 16rpx 34rpx rgba(111, 74, 28, 0.1);
-}
-
-.mascot-image {
-  flex-shrink: 0;
-  width: 132rpx;
-  height: 132rpx;
-  border-radius: 28rpx;
-  box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.12);
-}
-
-.mascot-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.mascot-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 42rpx;
-  padding: 0 18rpx;
-  border-radius: 999rpx;
-  background: #fff2b0;
-  color: #7a5016;
-  font-size: 23rpx;
-  font-weight: 800;
-}
-
-.mascot-text {
-  margin-top: 14rpx;
-  color: #5b442c;
-  font-size: 28rpx;
-  font-weight: 700;
-  line-height: 1.45;
 }
 
 .action-panel {
