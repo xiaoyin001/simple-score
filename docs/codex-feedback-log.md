@@ -23,6 +23,56 @@
 
 ## 当前反馈
 
+### 2026-07-01 loading 调用未成对警告
+
+```text
+日期：2026-07-01
+来源：human
+场景：房间页 / 单人记分 / 积分转移 / 操作反馈
+结果：negative
+分值：-2
+严重度：2
+置信度：5
+影响模块：miniprogram
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`updateMemberScore`、`runBatch`、`submitTransfer`、`reviewJoinRequest`、`removeMember`、`undoRecord`、`closeRoom`
+问题对应关系：
+- 控制台提示 `showLoading 与 hideLoading 必须配对使用`：对应用户取消弹窗后仍进入 `finally` 调用 `hideLoading`，以及成功后先 `showToast` 再 `hideLoading` 导致 loading 已被替换。
+现象：
+- 开发者工具控制台出现黄色 warning，指向房间页操作流程。
+根因或推测：
+- 多个房间页操作各自管理 `wx.showLoading` / `wx.hideLoading`，缺少统一的“已显示 loading”状态。
+处理方式：
+- 房间页新增 `showBusyLoading`、`hideBusyLoading`、`showBusySuccess`、`showBusyError`，所有操作统一先关闭 loading 再展示 toast，取消输入时不再触发未配对的 `hideLoading`。
+是否需要新增自动检查或测试：
+- 当前通过语法检查覆盖；仍需微信开发者工具人工验证单人加扣分、批量记分、转移、审批、移出、撤销和关闭房间时控制台不再出现该 warning。
+```
+
+### 2026-07-01 开发者工具实时监听登录态失败
+
+```text
+日期：2026-07-01
+来源：human
+场景：房间页 / 实时同步 / 微信开发者工具
+结果：negative
+分值：-3
+严重度：2
+置信度：4
+影响模块：miniprogram
+关联代码位置：
+- `miniprogram/pages/room/index.js`：`startRoomWatchers`、`stopRoomWatchers`
+问题对应关系：
+- 开发者工具控制台出现 `realtime listener init watch fail`、`login fail`、`invalid state` 红色错误：对应房间页把 CloudBase watch 初始化失败用 `console.error` 输出，并继续保留 watcher 状态。
+现象：
+- 房间数据可通过 `getRoom` 获取，但控制台出现实时监听登录态错误，影响调试判断。
+根因或推测：
+- 微信开发者工具或基础库的实时数据库监听登录状态异常，属于监听通道不可用，不等同于房间数据加载失败。
+处理方式：
+- 房间页在识别实时监听登录态错误时关闭 watcher，标记本页不再重复启动监听，并保持 `getRoom` 快照展示；日志降级为 `console.warn`，避免误报为业务红错。
+是否需要新增自动检查或测试：
+- 当前通过语法检查覆盖；仍需在微信开发者工具中确认页面能正常查看，且控制台不再反复出现项目侧红色 `[room-sync]` 错误。
+```
+
 ### 2026-07-01 未保存默认名和过期房间入口细节
 
 ```text

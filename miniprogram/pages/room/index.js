@@ -101,6 +101,22 @@ function isRoomOperable(room) {
   return !!(room && room.status === "active");
 }
 
+function getErrorText(error) {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  return [
+    error.errMsg,
+    error.message,
+    error.code,
+    error.errCode,
+  ].filter(Boolean).join(" ");
+}
+
+function isRealtimeLoginStateError(error) {
+  const text = getErrorText(error);
+  return /realtime listener init watch fail|login fail|invalid state/i.test(text);
+}
+
 function getScoreTone(score) {
   if (score > 0) return "score-positive";
   if (score < 0) return "score-negative";
@@ -481,11 +497,22 @@ Page({
   },
 
   startRoomWatchers() {
-    if (this.roomWatchers || !this.data.roomId || !this.data.currentOpenid) return;
+    if (
+      this.roomWatchers ||
+      this.roomWatchUnavailable ||
+      !this.data.roomId ||
+      !this.data.currentOpenid
+    ) return;
     const db = wx.cloud.database();
     const roomId = this.data.roomId;
     const onError = (source) => (error) => {
-      console.error(`[room-sync] ${source} watch failed`, error);
+      console.warn(`[room-sync] ${source} watch unavailable`, error);
+      this.stopRoomWatchers({ keepStatus: true, keepRecovery: true });
+      if (isRealtimeLoginStateError(error)) {
+        this.roomWatchUnavailable = true;
+        this.updateSyncStatus("connected");
+        return;
+      }
       this.scheduleRoomViewRecovery();
     };
 
@@ -518,7 +545,7 @@ Page({
       if (watcher && typeof watcher.close === "function") watcher.close();
     });
     this.roomWatchers = null;
-    if (this.roomViewRecoveryTimer) {
+    if (!options.keepRecovery && this.roomViewRecoveryTimer) {
       clearTimeout(this.roomViewRecoveryTimer);
       this.roomViewRecoveryTimer = null;
     }
@@ -855,6 +882,27 @@ Page({
     });
   },
 
+  showBusyLoading(title) {
+    this.busyLoadingVisible = true;
+    wx.showLoading({ title });
+  },
+
+  hideBusyLoading() {
+    if (!this.busyLoadingVisible) return;
+    wx.hideLoading();
+    this.busyLoadingVisible = false;
+  },
+
+  showBusySuccess(title) {
+    this.hideBusyLoading();
+    wx.showToast({ title, icon: "success" });
+  },
+
+  showBusyError(error) {
+    this.hideBusyLoading();
+    showError(error);
+  },
+
   promptNickname(currentName) {
     return new Promise((resolve, reject) => {
       wx.showModal({
@@ -890,7 +938,7 @@ Page({
     this.promptNickname(nickname)
       .then((nextNickname) => {
         this.setData({ submitting: true });
-        wx.showLoading({ title: "保存中" });
+        this.showBusyLoading("保存中");
         return callScoreFunction("updateNickname", {
           roomId: this.data.roomId,
           nickname: nextNickname,
@@ -898,13 +946,13 @@ Page({
       })
       .then((result) => {
         this.applyWriteResult(result);
-        wx.showToast({ title: "已修改", icon: "success" });
+        this.showBusySuccess("已修改");
       })
       .catch((error) => {
-        if (error.message !== "已取消") showError(error);
+        if (error.message !== "已取消") this.showBusyError(error);
       })
       .finally(() => {
-        wx.hideLoading();
+        this.hideBusyLoading();
         this.setData({ submitting: false });
       });
   },
@@ -942,7 +990,7 @@ Page({
     this.promptAmount(title)
       .then((amount) => {
         this.setData({ submitting: true });
-        wx.showLoading({ title: "提交中" });
+        this.showBusyLoading("提交中");
         return callScoreFunction("updateScore", {
           roomId: this.data.roomId,
           memberId,
@@ -952,13 +1000,13 @@ Page({
       })
       .then((result) => {
         this.applyWriteResult(result);
-        wx.showToast({ title: "已更新", icon: "success" });
+        this.showBusySuccess("已更新");
       })
       .catch((error) => {
-        if (error.message !== "已取消") showError(error);
+        if (error.message !== "已取消") this.showBusyError(error);
       })
       .finally(() => {
-        wx.hideLoading();
+        this.hideBusyLoading();
         this.setData({ submitting: false });
       });
   },
@@ -1017,7 +1065,7 @@ Page({
     this.promptAmount(title)
       .then((amount) => {
         this.setData({ submitting: true });
-        wx.showLoading({ title: "提交中" });
+        this.showBusyLoading("提交中");
         return callScoreFunction("batchUpdateScore", {
           roomId: this.data.roomId,
           memberIds: this.data.batchSelected,
@@ -1027,14 +1075,14 @@ Page({
       })
       .then((result) => {
         this.applyWriteResult(result);
-        wx.showToast({ title: "已更新", icon: "success" });
+        this.showBusySuccess("已更新");
         this.setData({ batchSelected: [], batchMode: false });
       })
       .catch((error) => {
-        if (error.message !== "已取消") showError(error);
+        if (error.message !== "已取消") this.showBusyError(error);
       })
       .finally(() => {
-        wx.hideLoading();
+        this.hideBusyLoading();
         this.setData({ submitting: false });
       });
   },
@@ -1163,7 +1211,7 @@ Page({
     }
 
     this.setData({ submitting: true });
-    wx.showLoading({ title: "提交中" });
+    this.showBusyLoading("提交中");
     callScoreFunction("batchTransferScore", {
       roomId: this.data.roomId,
       fromType: this.data.transferSourceType,
@@ -1176,7 +1224,7 @@ Page({
     })
       .then((result) => {
         this.applyWriteResult(result);
-        wx.showToast({ title: "已转移", icon: "success" });
+        this.showBusySuccess("已转移");
         this.setData({
           transferDialogVisible: false,
           transferAmount: "",
@@ -1190,9 +1238,9 @@ Page({
           transferSelected: [],
         });
       })
-      .catch(showError)
+      .catch((error) => this.showBusyError(error))
       .finally(() => {
-        wx.hideLoading();
+        this.hideBusyLoading();
         this.setData({ submitting: false });
       });
   },
@@ -1210,7 +1258,7 @@ Page({
       success: (res) => {
         if (!res.confirm) return;
         this.setData({ submitting: true });
-        wx.showLoading({ title: "处理中" });
+        this.showBusyLoading("处理中");
         callScoreFunction("reviewJoinRequest", {
           roomId: this.data.roomId,
           memberId,
@@ -1218,14 +1266,11 @@ Page({
         })
           .then((result) => {
             this.applyWriteResult(result);
-            wx.showToast({
-              title: approve ? "已同意" : "已处理",
-              icon: "success",
-            });
+            this.showBusySuccess(approve ? "已同意" : "已处理");
           })
-          .catch(showError)
+          .catch((error) => this.showBusyError(error))
           .finally(() => {
-            wx.hideLoading();
+            this.hideBusyLoading();
             this.setData({ submitting: false });
           });
       },
@@ -1242,18 +1287,18 @@ Page({
       success: (res) => {
         if (!res.confirm) return;
         this.setData({ submitting: true });
-        wx.showLoading({ title: "处理中" });
+        this.showBusyLoading("处理中");
         callScoreFunction("removeMember", {
           roomId: this.data.roomId,
           memberId,
         })
           .then((result) => {
             this.applyWriteResult(result);
-            wx.showToast({ title: "已移出", icon: "success" });
+            this.showBusySuccess("已移出");
           })
-          .catch(showError)
+          .catch((error) => this.showBusyError(error))
           .finally(() => {
-            wx.hideLoading();
+            this.hideBusyLoading();
             this.setData({ submitting: false });
           });
       },
@@ -1271,18 +1316,18 @@ Page({
       success: (res) => {
         if (!res.confirm) return;
         this.setData({ submitting: true });
-        wx.showLoading({ title: "撤销中" });
+        this.showBusyLoading("撤销中");
         callScoreFunction("undoLastAction", {
           roomId: this.data.roomId,
           recordId,
         })
           .then((result) => {
             this.applyWriteResult(result);
-            wx.showToast({ title: "已撤销", icon: "success" });
+            this.showBusySuccess("已撤销");
           })
-          .catch(showError)
+          .catch((error) => this.showBusyError(error))
           .finally(() => {
-            wx.hideLoading();
+            this.hideBusyLoading();
             this.setData({ submitting: false });
           });
       },
@@ -1297,14 +1342,14 @@ Page({
       confirmText: "关闭",
       success: (res) => {
         if (!res.confirm) return;
-        wx.showLoading({ title: "关闭中" });
+        this.showBusyLoading("关闭中");
         callScoreFunction("closeRoom", { roomId: this.data.roomId })
           .then((result) => {
             this.applyWriteResult(result);
-            wx.showToast({ title: "已关闭", icon: "success" });
+            this.showBusySuccess("已关闭");
           })
-          .catch(showError)
-          .finally(() => wx.hideLoading());
+          .catch((error) => this.showBusyError(error))
+          .finally(() => this.hideBusyLoading());
       },
     });
   },
