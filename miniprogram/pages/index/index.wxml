@@ -21,7 +21,7 @@
     <view class="profile-preview">
       <view class="avatar {{profileAvatar.avatarTone}}">{{profileAvatar.avatarText}}</view>
       <view>
-        <view class="profile-preview-name">{{profileDraftName || '我'}}</view>
+        <view class="profile-preview-name">{{profileDraftName || profileFallbackName}}</view>
         <view class="profile-preview-desc">头像和默认名会带入房间</view>
       </view>
     </view>

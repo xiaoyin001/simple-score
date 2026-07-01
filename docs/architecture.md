@@ -58,6 +58,8 @@ cloudfunctions/
 
 `users` 不保存房间名、房间码、角色、成员状态、积分、房间关闭状态或过期状态。这些信息都从 `rooms` 读取并派生。
 
+首页默认名保存到 `users.defaultName`。如果用户没有保存默认名，前端首次进入时在本地 `userProfile.generatedName` 生成一次 `yyMMddHHmm` 格式的临时昵称，创建房间和加入房间默认复用该临时昵称；该值不写入 `users.defaultName`。
+
 ### 3.2 rooms
 
 房间表保存完整房间事实。
@@ -200,7 +202,7 @@ wx.cloud.database()
   .watch(...)
 ```
 
-进入房间页时先调用 `getRoom` 获取权威快照。写操作成功后云函数返回最新 `roomView`，操作端立即应用。其他在线端通过 `rooms` watcher 收到同一房间文档变化后重新派生成员列表、待确认列表和记录列表。
+进入房间页时先调用 `getRoom` 获取权威快照。写操作成功后云函数返回最新 `roomView`，操作端立即应用。其他在线端通过 `rooms` watcher 收到同一房间文档变化后重新派生成员列表、待确认列表和记录列表。房间页会根据 `expireAt` 在前端兜底派生只读状态，避免 watcher 返回原始 `active` 房间文档时继续展示操作入口。
 
 页面隐藏或卸载时关闭 watcher。watch 短暂空快照时保留当前页面，并静默调用一次 `getRoom` 兜底。
 

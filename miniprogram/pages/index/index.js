@@ -1,5 +1,6 @@
 const {
   DEFAULT_ROOM_NICKNAME,
+  getRoomProfile,
   getStoredProfile,
   saveUserProfile,
 } = require("../../utils/profile");
@@ -8,9 +9,11 @@ const { callScoreFunction, showError } = require("../../utils/api");
 
 function buildProfileView(profile) {
   const defaultName = String((profile && profile.defaultName) || "").trim();
-  const displayName = defaultName || DEFAULT_ROOM_NICKNAME;
+  const generatedName = String((profile && profile.generatedName) || "").trim();
+  const displayName = defaultName || generatedName || DEFAULT_ROOM_NICKNAME;
   return {
     userProfile: profile,
+    profileFallbackName: displayName,
     profileDraftName: displayName,
     profileSavedName: defaultName,
     profileAvatar: buildAvatarView({
@@ -44,9 +47,10 @@ Page({
     // 当前用户资料保存在本地，用于创建或加入房间时默认带入。
     userProfile: getStoredProfile(),
     // 默认名草稿，点击保存后才写入本地缓存。
-    profileDraftName: DEFAULT_ROOM_NICKNAME,
+    profileDraftName: getRoomProfile().nickname,
+    profileFallbackName: getRoomProfile().nickname,
     profileSavedName: "",
-    profileAvatar: buildAvatarView({ nickname: DEFAULT_ROOM_NICKNAME }),
+    profileAvatar: buildAvatarView({ nickname: getRoomProfile().nickname }),
     profileSaving: false,
     profileError: "",
     homeLoading: false,
@@ -65,6 +69,7 @@ Page({
 
   // 页面展示时刷新最近房间列表。
   onShow() {
+    getRoomProfile();
     const userProfile = getStoredProfile();
     this.setData({
       ...buildProfileView(userProfile),
@@ -97,7 +102,11 @@ Page({
   // 只更新草稿，不直接写入本地缓存。
   onProfileDraftInput(event) {
     const draftName = event.detail.value;
-    const displayName = String(draftName || "").trim() || DEFAULT_ROOM_NICKNAME;
+    const displayName =
+      String(draftName || "").trim() ||
+      this.data.profileFallbackName ||
+      getRoomProfile().nickname ||
+      DEFAULT_ROOM_NICKNAME;
     this.setData({
       profileDraftName: draftName,
       profileAvatar: buildAvatarView({

@@ -11,10 +11,10 @@
     </view>
   </view>
 
-  <view class="status-bar" wx:if="{{room.status !== 'active'}}">
+  <view class="status-bar" wx:if="{{!isRoomOperable}}">
     当前房间已{{room.status === 'closed' ? '关闭' : '过期'}}，只能查看结果。
   </view>
-  <view class="status-bar pending" wx:if="{{room.status === 'active' && currentMemberStatus === 'pending'}}">
+  <view class="status-bar pending" wx:if="{{isRoomOperable && currentMemberStatus === 'pending'}}">
     你的加入申请正在等待房主确认，确认后才能参与记分。
   </view>
   <view class="status-bar removed" wx:if="{{currentMemberStatus === 'removed'}}">
@@ -33,7 +33,7 @@
       <image class="score-panel-icon" src="/assets/app-icon.png" mode="aspectFit" />
     </view>
     <view class="score-panel-actions">
-      <view class="public-transfer-row" wx:if="{{canTransfer && room.status === 'active'}}">
+      <view class="public-transfer-row" wx:if="{{canTransfer && isRoomOperable}}">
         <button class="public-transfer-button left" bindtap="openTransferToPublicDialog">转入</button>
         <button class="public-transfer-button right" bindtap="openTransferFromPublicDialog">转出</button>
       </view>
@@ -45,14 +45,14 @@
       <view class="section-title">成员</view>
       <view class="section-tools">
         <button
-          wx:if="{{canTransfer && room.status === 'active'}}"
+          wx:if="{{canTransfer && isRoomOperable}}"
           class="text-button transfer-toggle {{transferMode ? 'active' : ''}}"
           bindtap="toggleTransferMode"
         >
           {{transferMode ? '取消转移' : '批量转移'}}
         </button>
         <button
-          wx:if="{{isOwner && room.status === 'active'}}"
+          wx:if="{{isOwner && isRoomOperable}}"
           class="text-button batch-toggle {{batchMode ? 'active' : ''}}"
           bindtap="toggleBatchMode"
         >
@@ -61,7 +61,7 @@
       </view>
     </view>
 
-    <view class="pending-list" wx:if="{{isOwner && pendingMembers.length && room.status === 'active'}}">
+    <view class="pending-list" wx:if="{{isOwner && pendingMembers.length && isRoomOperable}}">
       <view class="pending-card" wx:for="{{pendingMembers}}" wx:key="_id">
         <view class="member-info">
           <view class="member-avatar avatar {{item.avatarTone}}">{{item.avatarText}}</view>
@@ -101,7 +101,7 @@
         <view class="member-info">
           <label
             class="member-check"
-            wx:if="{{item.canSelect && (batchMode || (transferMode && item._id !== currentMemberId))}}"
+            wx:if="{{isRoomOperable && item.canSelect && (batchMode || (transferMode && item._id !== currentMemberId))}}"
           >
             <checkbox value="{{item._id}}" color="#1f7a5a" />
           </label>
@@ -125,7 +125,7 @@
           </view>
           <view class="member-score {{item.scoreTone}}">{{item.score}}</view>
         </view>
-        <view class="member-actions" wx:if="{{room.status === 'active' && item.isActive && !batchMode && !transferMode}}">
+        <view class="member-actions" wx:if="{{isRoomOperable && item.isActive && !batchMode && !transferMode}}">
           <button
             wx:if="{{isOwner}}"
             class="score-action add"
@@ -168,11 +168,11 @@
       </view>
     </checkbox-group>
 
-    <view class="batch-actions" wx:if="{{batchMode}}">
+    <view class="batch-actions" wx:if="{{batchMode && isRoomOperable}}">
       <button class="batch-button add" data-action="add" bindtap="runBatch">批量加分</button>
       <button class="batch-button subtract" data-action="subtract" bindtap="runBatch">批量扣分</button>
     </view>
-    <view class="batch-actions" wx:if="{{transferMode}}">
+    <view class="batch-actions" wx:if="{{transferMode && isRoomOperable}}">
       <button class="batch-button transfer" bindtap="openBatchTransferDialog">转给所选成员</button>
     </view>
   </view>
@@ -244,7 +244,7 @@
         <view class="record-time">{{item.displayTime}}</view>
         <view class="undone" wx:if="{{item.isUndone}}">已撤销</view>
         <button
-          wx:if="{{isOwner && room.status === 'active' && item.canUndo}}"
+          wx:if="{{isOwner && isRoomOperable && item.canUndo}}"
           class="undo-button"
           data-record-id="{{item._id}}"
           data-title="{{item.displayType}}"
@@ -275,7 +275,7 @@
     </view>
   </view>
 
-  <view class="footer-actions" wx:if="{{isOwner && room.status === 'active'}}">
+  <view class="footer-actions" wx:if="{{isOwner && isRoomOperable}}">
     <button class="footer-button danger" bindtap="closeRoom">关闭房间</button>
   </view>
 </view>

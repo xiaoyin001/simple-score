@@ -63,6 +63,7 @@ const ACTIVE_ROOM_DURATION_MS = 24 * 60 * 60 * 1000;
 const ROOM_VISIBLE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_RECORDS = 50;
 const MAX_TRANSACTION_RETRY = 3;
+const DEFAULT_NICKNAME = "2601010000";
 
 function success(data = {}) {
   return {
@@ -85,6 +86,20 @@ function now() {
 
 function normalizeText(value, fallback = "") {
   return String(value || fallback).trim();
+}
+
+function padTimePart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function buildGeneratedNickname(date = now()) {
+  return [
+    padTimePart(date.getFullYear() % 100),
+    padTimePart(date.getMonth() + 1),
+    padTimePart(date.getDate()),
+    padTimePart(date.getHours()),
+    padTimePart(date.getMinutes()),
+  ].join("");
 }
 
 function normalizeNicknameKey(value) {
@@ -125,9 +140,9 @@ function isRoomWritable(room) {
   return room && room.status === ROOM_STATUS.ACTIVE && !isExpired(room);
 }
 
-function buildNickname(input, fallback = "我") {
+function buildNickname(input, fallback = buildGeneratedNickname()) {
   const nickname = normalizeText(input, fallback).slice(0, 20);
-  return nickname || fallback;
+  return nickname || fallback || DEFAULT_NICKNAME;
 }
 
 function createId(prefix) {
@@ -604,7 +619,7 @@ async function getHomeData() {
 async function saveDefaultName(event) {
   await ensureCollections();
   const openid = getWxContext().OPENID;
-  const defaultName = buildNickname(event.defaultName, "我");
+  const defaultName = buildNickname(event.defaultName);
   await ensureUser(openid, { defaultName });
   return success({
     defaultName,
@@ -649,7 +664,7 @@ async function createRoom(event) {
   const name = normalizeText(event.name);
   const memberLimit = parseInteger(event.memberLimit || 12);
   const publicScore = parseInteger(event.publicScore || 0);
-  const ownerNickname = buildNickname(event.nickname, "我");
+  const ownerNickname = buildNickname(event.nickname);
   const requireApproval = !!event.requireApproval;
 
   if (!name) return fail("房间名称不能为空");
@@ -716,7 +731,7 @@ async function joinRoom(event) {
   await ensureCollections();
   const openid = getWxContext().OPENID;
   await getUser(openid);
-  const nickname = buildNickname(event.nickname, "我");
+  const nickname = buildNickname(event.nickname);
 
   try {
     const room = await findRoomByCodeOrId(event);
@@ -791,7 +806,7 @@ async function updateNickname(event) {
   await ensureCollections();
   const openid = getWxContext().OPENID;
   const roomId = normalizeText(event.roomId);
-  const nickname = buildNickname(event.nickname, "我");
+  const nickname = buildNickname(event.nickname);
   try {
     let nextRoom = null;
     await runRoomTransaction(async (transaction) => {

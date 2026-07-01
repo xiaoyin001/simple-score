@@ -78,6 +78,29 @@ function formatTime(value) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function toTime(value) {
+  if (!value) return 0;
+  if (typeof value.getTime === "function") return value.getTime();
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (value.$date) return new Date(value.$date).getTime() || 0;
+  return new Date(value).getTime() || 0;
+}
+
+function normalizeRoomForView(room) {
+  if (!room) return room;
+  if (room.status === "active" && room.expireAt && toTime(room.expireAt) <= Date.now()) {
+    return {
+      ...room,
+      status: "expired",
+    };
+  }
+  return room;
+}
+
+function isRoomOperable(room) {
+  return !!(room && room.status === "active");
+}
+
 function getScoreTone(score) {
   if (score > 0) return "score-positive";
   if (score < 0) return "score-negative";
@@ -372,6 +395,8 @@ Page({
     canNextRecentRecordPage: false,
     // 当前用户是否为房主。
     isOwner: false,
+    // 当前房间是否仍可进行写操作。
+    isRoomOperable: false,
     // 当前用户是否可发起积分转移。
     canTransfer: false,
     // 当前用户在房间内的成员 ID。
@@ -546,6 +571,8 @@ Page({
       clearTimeout(this.roomViewRecoveryTimer);
       this.roomViewRecoveryTimer = null;
     }
+    const room = normalizeRoomForView(view.room);
+    const roomOperable = isRoomOperable(room);
     const currentOpenid = this.data.currentOpenid || "";
     const rawMembers = view.members || view.room.members || [];
     const currentMember =
@@ -567,25 +594,38 @@ Page({
     const memberState = buildMemberState(
       rawMembers,
       currentMemberId,
-      view.room
+      room
     );
     const sortedRecords = sortRecordsForView(view.recentRecords || view.room.records || []);
     const formattedRecords = sortedRecords.map((record) =>
       formatRecordForView(record, currentMemberId)
     );
-    this.setData({
-      room: view.room,
+    const nextData = {
+      room,
       ...memberState,
       ...buildRecentRecordPageState(formattedRecords, this.data.recentRecordPage),
       isOwner,
+      isRoomOperable: roomOperable,
       currentMemberId,
       currentMemberStatus: (currentMember && currentMember.status) || this.data.currentMemberStatus,
       canTransfer: !!(
+        roomOperable &&
         currentMemberId &&
         currentMember &&
         currentMember.status === "active"
       ),
-    });
+    };
+    if (!roomOperable) {
+      Object.assign(nextData, {
+        batchMode: false,
+        batchSelected: [],
+        transferMode: false,
+        transferSelected: [],
+        transferDialogVisible: false,
+        transferTargets: [],
+      });
+    }
+    this.setData(nextData);
     this.updateSyncStatus("connected");
   },
 
@@ -670,7 +710,14 @@ Page({
   // 从云函数加载房间、成员、记录和当前用户权限。
   loadRoom(options = {}) {
     if (!this.data.roomId) {
-      wx.showToast({ title: "缺少房间 ID", icon: "none" });
+      if (!options.silent) {
+        this.setData({
+          loading: false,
+          loadFailed: true,
+          room: null,
+          loadErrorText: "缺少房间 ID，请从首页、房间码或分享链接进入。",
+        });
+      }
       return Promise.resolve();
     }
     if (options.silent && this.silentRoomLoading) return Promise.resolve();
@@ -682,16 +729,24 @@ Page({
         const currentMember = result.currentMember || null;
         const currentMemberId = (currentMember && currentMember._id) || "";
         const currentOpenid = (currentMember && currentMember.openid) || "";
-        const memberState = buildMemberState(result.members || [], currentMemberId, result.room);
+        const room = normalizeRoomForView(result.room);
+        const roomOperable = isRoomOperable(room);
+        const memberState = buildMemberState(result.members || [], currentMemberId, room);
         const formattedRecords = sortRecordsForView(result.recentRecords || []).map((record) =>
           formatRecordForView(record, currentMemberId)
         );
         const nextData = {
-          room: result.room,
+          room,
           ...memberState,
           ...buildRecentRecordPageState(formattedRecords, 1),
           isOwner,
-          canTransfer: !!(currentMemberId && currentMember && currentMember.status === "active"),
+          isRoomOperable: roomOperable,
+          canTransfer: !!(
+            roomOperable &&
+            currentMemberId &&
+            currentMember &&
+            currentMember.status === "active"
+          ),
           currentMemberId,
           currentOpenid,
           currentMemberStatus: (currentMember && currentMember.status) || "",
@@ -710,6 +765,16 @@ Page({
             transferSourceLabel: "我",
             transferTargetSummary: "未选择目标",
             transferTargetCount: 0,
+          });
+        }
+        if (!roomOperable) {
+          Object.assign(nextData, {
+            transferDialogVisible: false,
+            transferMode: false,
+            transferSelected: [],
+            transferTargets: [],
+            batchMode: false,
+            batchSelected: [],
           });
         }
         this.setData(nextData);

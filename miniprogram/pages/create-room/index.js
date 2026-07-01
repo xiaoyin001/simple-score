@@ -1,6 +1,11 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
 const { getRoomProfile } = require("../../utils/profile");
 
+function buildDefaultRoomName(nickname) {
+  const prefix = String(nickname || "").trim().slice(0, 6) || "我的";
+  return `${prefix}的房间`.slice(0, 20);
+}
+
 Page({
   data: {
     // 房间名称，提交前会去除首尾空白。
@@ -11,6 +16,8 @@ Page({
     publicScore: 0,
     // 创建者在房间内展示的昵称。
     nickname: "",
+    // 用户是否已经手动编辑房间名称。
+    roomNameTouched: false,
     // 是否需要房主确认后才能加入。
     requireApproval: false,
     // 提交中状态，防止重复创建。
@@ -21,6 +28,7 @@ Page({
   onLoad() {
     const profile = getRoomProfile();
     this.setData({
+      name: buildDefaultRoomName(profile.nickname),
       nickname: profile.nickname,
     });
   },
@@ -28,8 +36,24 @@ Page({
   // 根据输入框绑定的 field 更新对应表单字段。
   onInput(event) {
     const { field } = event.currentTarget.dataset;
+    const value = event.detail.value;
+    if (field === "name") {
+      this.setData({
+        name: value,
+        roomNameTouched: true,
+      });
+      return;
+    }
+    if (field === "nickname") {
+      const nextData = { nickname: value };
+      if (!this.data.roomNameTouched) {
+        nextData.name = buildDefaultRoomName(value || getRoomProfile().nickname);
+      }
+      this.setData(nextData);
+      return;
+    }
     this.setData({
-      [field]: event.detail.value,
+      [field]: value,
     });
   },
 
