@@ -18,11 +18,18 @@ function buildProfileView(profile) {
     profileFallbackName: displayName,
     profileDraftName: displayName,
     profileSavedName: defaultName,
+    profileCanSave: false,
     profileAvatar: buildAvatarView({
       nickname: displayName,
       seed: displayName,
     }),
   };
+}
+
+function canSaveProfileName(draftName, baseName) {
+  const draft = String(draftName || "").trim();
+  const base = String(baseName || "").trim();
+  return !!draft && draft !== base;
 }
 
 function buildRoomStatusView(room) {
@@ -77,6 +84,7 @@ Page({
     profileDraftName: getRoomProfile().nickname,
     profileFallbackName: getRoomProfile().nickname,
     profileSavedName: "",
+    profileCanSave: false,
     profileAvatar: buildAvatarView({ nickname: getRoomProfile().nickname }),
     profileSaving: false,
     profileError: "",
@@ -145,6 +153,7 @@ Page({
   // 只更新草稿，不直接写入本地缓存。
   onProfileDraftInput(event) {
     const draftName = event.detail.value;
+    const baseName = this.data.profileSavedName || this.data.profileFallbackName;
     const displayName =
       String(draftName || "").trim() ||
       this.data.profileFallbackName ||
@@ -156,6 +165,7 @@ Page({
         nickname: displayName,
         seed: displayName,
       }),
+      profileCanSave: canSaveProfileName(draftName, baseName),
       profileError: String(draftName || "").trim() ? "" : "默认名不能为空",
     });
   },
@@ -168,6 +178,7 @@ Page({
       this.setData({ profileError: "默认名不能为空" });
       return;
     }
+    if (!this.data.profileCanSave) return;
     if (defaultName.length > 20) {
       this.setData({ profileError: "默认名最多 20 个字符" });
       return;

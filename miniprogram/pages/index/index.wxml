@@ -16,33 +16,28 @@
         <view class="default-name-title">当前用户</view>
         <view class="default-name-subtitle">创建或加入房间时自动带入</view>
       </view>
-      <view class="default-name-status">{{profileSavedName ? '已保存' : '未保存'}}</view>
     </view>
     <view class="profile-preview">
       <view class="avatar {{profileAvatar.avatarTone}}">{{profileAvatar.avatarText}}</view>
-      <view>
-        <view class="profile-preview-name">{{profileDraftName || profileFallbackName}}</view>
-        <view class="profile-preview-desc">头像和默认名会带入房间</view>
+      <view class="default-name-row">
+        <input
+          class="default-name-input"
+          type="nickname"
+          maxlength="20"
+          disabled="{{profileSaving}}"
+          placeholder="例如：小明"
+          value="{{profileDraftName}}"
+          bindinput="onProfileDraftInput"
+        />
+        <button
+          class="default-name-save"
+          loading="{{profileSaving}}"
+          disabled="{{profileSaving || !profileCanSave}}"
+          bindtap="saveProfileName"
+        >
+          {{profileSaving ? '保存中' : '保存'}}
+        </button>
       </view>
-    </view>
-    <view class="default-name-row">
-      <input
-        class="default-name-input"
-        type="nickname"
-        maxlength="20"
-        disabled="{{profileSaving}}"
-        placeholder="例如：小明"
-        value="{{profileDraftName}}"
-        bindinput="onProfileDraftInput"
-      />
-      <button
-        class="default-name-save"
-        loading="{{profileSaving}}"
-        disabled="{{profileSaving || !profileDraftName}}"
-        bindtap="saveProfileName"
-      >
-        {{profileSaving ? '保存中' : '保存'}}
-      </button>
     </view>
     <view class="default-name-hint {{profileError ? 'error' : ''}}">
       {{profileError || '点击保存后，创建或加入房间会使用这个名称'}}

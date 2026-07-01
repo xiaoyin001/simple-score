@@ -91,16 +91,6 @@ page {
   font-weight: 600;
 }
 
-.default-name-status {
-  flex-shrink: 0;
-  padding: 8rpx 16rpx;
-  border-radius: 999rpx;
-  background: #fff2b0;
-  color: #7a5016;
-  font-size: 22rpx;
-  font-weight: 800;
-}
-
 .profile-preview {
   display: flex;
   align-items: center;
@@ -148,37 +138,23 @@ page {
   color: #8b7356;
 }
 
-.profile-preview-name {
-  color: #3b260f;
-  font-size: 28rpx;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
-.profile-preview-desc {
-  margin-top: 6rpx;
-  color: #8a7358;
-  font-size: 22rpx;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
 .default-name-row {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  margin-top: 18rpx;
+  flex: 1;
+  min-width: 0;
+  gap: 12rpx;
 }
 
 .default-name-input {
   flex: 1;
   min-width: 0;
-  height: 72rpx;
-  padding: 0 20rpx;
+  height: 66rpx;
+  padding: 0 18rpx;
   border-radius: 16rpx;
   background: #fff8dd;
   color: #3b260f;
-  font-size: 28rpx;
+  font-size: 27rpx;
   font-weight: 700;
   box-sizing: border-box;
 }
@@ -188,14 +164,14 @@ page {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 108rpx;
-  height: 72rpx;
+  width: 104rpx;
+  height: 66rpx;
   margin: 0;
   padding: 0;
   border-radius: 16rpx;
   background: #47c982;
   color: #ffffff;
-  font-size: 26rpx;
+  font-size: 25rpx;
   font-weight: 800;
   line-height: 1;
 }
