@@ -71,7 +71,9 @@
         </view>
         <view class="recent-code">房间码 {{item.roomCode}}</view>
       </view>
-      <view class="recent-arrow">进入</view>
+      <view class="recent-arrow">
+        <text>进入</text>
+      </view>
     </view>
     <button
       class="load-more-button"
