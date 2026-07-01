@@ -272,17 +272,97 @@ page {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 18rpx;
   margin-bottom: 16rpx;
   padding: 24rpx;
-  border: 2rpx solid rgba(90, 52, 24, 0.08);
+  border: 3rpx solid #d8a33a;
   border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8rpx 18rpx rgba(111, 74, 28, 0.08);
+}
+
+.recent-active {
+  border-color: #25a968;
+  background: #f1fff7;
+}
+
+.recent-pending {
+  border-color: #e0a21b;
+  background: #fff8dd;
+}
+
+.recent-expired {
+  border-color: #4d8ed8;
+  background: #f0f7ff;
+}
+
+.recent-closed,
+.recent-removed {
+  border-color: #9a856b;
+  background: #f6f1e8;
+}
+
+.recent-rejected {
+  border-color: #d65b4f;
+  background: #fff1ef;
+}
+
+.recent-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
 }
 
 .recent-name {
+  flex: 1;
+  min-width: 0;
   color: #3b260f;
   font-size: 30rpx;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-status {
+  flex-shrink: 0;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.status-active {
+  background: #dff8eb;
+  color: #147a47;
+}
+
+.status-pending {
+  background: #ffe7a6;
+  color: #8a5a00;
+}
+
+.status-expired {
+  background: #dcefff;
+  color: #2469a8;
+}
+
+.status-closed,
+.status-removed {
+  background: #e7ddd0;
+  color: #6c5640;
+}
+
+.status-rejected {
+  background: #ffd9d5;
+  color: #a33b31;
 }
 
 .recent-code {
@@ -292,6 +372,7 @@ page {
 }
 
 .recent-arrow {
+  flex-shrink: 0;
   color: #278654;
   font-weight: 800;
   font-size: 26rpx;

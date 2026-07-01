@@ -25,15 +25,40 @@ function buildProfileView(profile) {
   };
 }
 
+function buildRoomStatusView(room) {
+  if (room.memberStatus === "pending") {
+    return { statusTone: "pending", statusLabel: "待确认" };
+  }
+  if (room.memberStatus === "rejected") {
+    return { statusTone: "rejected", statusLabel: "未通过" };
+  }
+  if (room.memberStatus === "removed") {
+    return { statusTone: "removed", statusLabel: "已移出" };
+  }
+  if (room.status === "closed") {
+    return { statusTone: "closed", statusLabel: "已关闭" };
+  }
+  if (room.status === "expired") {
+    return { statusTone: "expired", statusLabel: "已过期" };
+  }
+  return { statusTone: "active", statusLabel: "进行中" };
+}
+
 function getValidRecentRooms(rooms = []) {
   const sourceRooms = rooms;
-  return sourceRooms.map((room) => ({
-    roomId: room.roomId || room._id,
-    roomCode: room.roomCode,
-    name: room.name || "记分房间",
-    status: room.status || "active",
-    memberStatus: room.memberStatus || "",
-  })).filter((room) => room && room.roomId);
+  return sourceRooms.map((room) => {
+    const item = {
+      roomId: room.roomId || room._id,
+      roomCode: room.roomCode,
+      name: room.name || "记分房间",
+      status: room.status || "active",
+      memberStatus: room.memberStatus || "",
+    };
+    return {
+      ...item,
+      ...buildRoomStatusView(item),
+    };
+  }).filter((room) => room && room.roomId);
 }
 
 // 从扫码结果或分享路径中读取指定查询参数。

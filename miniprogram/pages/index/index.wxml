@@ -58,14 +58,17 @@
   <view class="section" wx:if="{{recentRooms.length}}">
     <view class="section-title">已加入房间</view>
     <view
-      class="recent-item"
+      class="recent-item recent-{{item.statusTone}}"
       wx:for="{{recentRooms}}"
       wx:key="roomId"
       bindtap="goRoom"
       data-room-id="{{item.roomId}}"
     >
-      <view>
-        <view class="recent-name">{{item.name}}</view>
+      <view class="recent-main">
+        <view class="recent-title-row">
+          <view class="recent-name">{{item.name}}</view>
+          <view class="recent-status status-{{item.statusTone}}">{{item.statusLabel}}</view>
+        </view>
         <view class="recent-code">房间码 {{item.roomCode}}</view>
       </view>
       <view class="recent-arrow">进入</view>
