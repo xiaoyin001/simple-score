@@ -29,14 +29,12 @@
           value="{{profileDraftName}}"
           bindinput="onProfileDraftInput"
         />
-        <button
-          class="default-name-save"
-          loading="{{profileSaving}}"
-          disabled="{{profileSaving || !profileCanSave}}"
+        <view
+          class="default-name-save {{profileSaving || !profileCanSave ? 'disabled' : ''}}"
           bindtap="saveProfileName"
         >
           {{profileSaving ? '保存中' : '保存'}}
-        </button>
+        </view>
       </view>
     </view>
     <view class="default-name-hint {{profileError ? 'error' : ''}}">

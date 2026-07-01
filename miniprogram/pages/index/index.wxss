@@ -94,7 +94,7 @@ page {
 .profile-preview {
   display: flex;
   align-items: center;
-  gap: 18rpx;
+  gap: 10rpx;
   margin-top: 18rpx;
 }
 
@@ -103,12 +103,12 @@ page {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 70rpx;
-  height: 70rpx;
+  width: 60rpx;
+  height: 60rpx;
   border: 4rpx solid rgba(255, 255, 255, 0.86);
   border-radius: 50%;
   color: #3b260f;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 900;
   box-shadow: 0 8rpx 18rpx rgba(111, 74, 28, 0.12);
   box-sizing: border-box;
@@ -143,19 +143,22 @@ page {
   align-items: center;
   flex: 1;
   min-width: 0;
-  gap: 12rpx;
+  gap: 25rpx;
 }
 
 .default-name-input {
-  flex: 1;
+  flex: 0 1 auto;
+  width: 400rpx;
   min-width: 0;
   height: 66rpx;
   padding: 0 18rpx;
-  border-radius: 16rpx;
-  background: #fff8dd;
+  border: 3rpx solid #d8a33a;
+  border-radius: 14rpx;
+  background: #ffffff;
   color: #3b260f;
   font-size: 27rpx;
   font-weight: 700;
+  box-shadow: inset 0 0 0 2rpx rgba(255, 217, 61, 0.28), 0 6rpx 12rpx rgba(111, 74, 28, 0.08);
   box-sizing: border-box;
 }
 
@@ -164,25 +167,26 @@ page {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 104rpx;
+  width: 110rpx;
   height: 66rpx;
   margin: 0;
   padding: 0;
-  border-radius: 16rpx;
+  border: 3rpx solid #2fb872;
+  border-radius: 14rpx;
   background: #47c982;
   color: #ffffff;
-  font-size: 25rpx;
+  font-size: 23rpx;
   font-weight: 800;
   line-height: 1;
+  box-shadow: 0 6rpx 12rpx rgba(47, 184, 114, 0.18), inset 0 -4rpx rgba(21, 122, 70, 0.18);
+  box-sizing: border-box;
 }
 
-.default-name-save::after {
-  border: 0;
-}
-
-.default-name-save[disabled] {
-  background: #cbead8;
-  color: #ffffff;
+.default-name-save.disabled {
+  border-color: #d9e5dc;
+  background: #eef5f0;
+  color: #a5b0a8;
+  box-shadow: none;
 }
 
 .default-name-hint {
