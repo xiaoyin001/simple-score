@@ -590,14 +590,15 @@ async function getHomeData(event = {}) {
   const openid = getWxContext().OPENID;
   const user = await getUser(openid);
   const roomIds = Array.isArray(user.roomIds) ? user.roomIds : [];
+  const orderedRoomIds = [...roomIds].reverse();
   const pageSize = normalizeHomePageSize(event.pageSize);
-  const startCursor = Math.min(normalizeHomeCursor(event.cursor), roomIds.length);
+  const startCursor = Math.min(normalizeHomeCursor(event.cursor), orderedRoomIds.length);
   const rooms = [];
   const invalidRoomIds = new Set();
   let scanIndex = startCursor;
 
-  for (; scanIndex < roomIds.length && rooms.length < pageSize; scanIndex += 1) {
-    const roomId = roomIds[scanIndex];
+  for (; scanIndex < orderedRoomIds.length && rooms.length < pageSize; scanIndex += 1) {
+    const roomId = orderedRoomIds[scanIndex];
     const room = await getRoomById(roomId);
     if (!room || isHidden(room)) {
       invalidRoomIds.add(roomId);
@@ -623,7 +624,7 @@ async function getHomeData(event = {}) {
   const keptRoomIds = invalidRoomIds.size
     ? roomIds.filter((roomId) => !invalidRoomIds.has(roomId))
     : roomIds;
-  const removedBeforeNextCursor = roomIds
+  const removedBeforeNextCursor = orderedRoomIds
     .slice(0, scanIndex)
     .filter((roomId) => invalidRoomIds.has(roomId)).length;
   const nextCursor = Math.max(0, scanIndex - removedBeforeNextCursor);
