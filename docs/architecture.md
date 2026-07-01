@@ -50,13 +50,13 @@ cloudfunctions/
   _id: "用户 openid",
   openid: "用户 openid",
   defaultName: "首页默认名",
-  roomIds: ["用户创建、加入或申请过的房间 ID"],
+  roomIds: ["用户创建、加入或申请过的房间 ID，首页按该数组顺序分页展示"],
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
-`users` 不保存房间名、房间码、角色、成员状态、积分、房间关闭状态或过期状态。这些信息都从 `rooms` 读取并派生。
+`users` 不保存房间名、房间码、角色、成员状态、积分、房间关闭状态或过期状态。这些信息都从 `rooms` 读取并派生。`roomIds` 只承担当前用户的房间关联索引和首页展示顺序，不记录用户访问时间。
 
 首页默认名保存到 `users.defaultName`。如果用户没有保存默认名，前端首次进入时在本地 `userProfile.generatedName` 生成一次 `yyMMddHHmm` 格式的临时昵称，创建房间和加入房间默认复用该临时昵称；该值不写入 `users.defaultName`。
 
@@ -182,6 +182,8 @@ closeRoom
 8. 创建或加入房间后，把 `roomId` 写入 `users.roomIds`。
 
 当前阶段不维护复杂请求幂等表。前端通过 `submitting` 禁用按钮减少重复提交；如果重复请求实际成功，房主可撤销多余记录。
+
+`getHomeData` 用于首页读取用户资料和已加入房间列表。它接收 `cursor` 和 `pageSize`，按 `users.roomIds` 顺序向后扫描房间，跳过不存在、超过 `hiddenAt` 或当前用户无关联权限的房间，收集满一页后返回 `rooms`、`nextCursor`、`hasMore` 和 `pageSize`。扫描过程中发现的无效 roomId 会从 `users.roomIds` 懒清理。首页列表不按 `rooms.updatedAt` 排序，避免房间内业务更新影响用户的房间列表顺序。
 
 ## 5. 权限
 

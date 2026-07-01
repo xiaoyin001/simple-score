@@ -297,6 +297,39 @@ page {
   font-size: 26rpx;
 }
 
+.load-more-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 72rpx;
+  margin: 6rpx 0 0;
+  padding: 0;
+  border-radius: 18rpx;
+  background: #fff8dd;
+  color: #7a5016;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.load-more-button::after {
+  border: 0;
+}
+
+.load-more-button[disabled] {
+  background: #f1e8d8;
+  color: #9a856b;
+}
+
+.list-loading {
+  padding: 10rpx 0 2rpx;
+  color: #8a7358;
+  font-size: 24rpx;
+  font-weight: 600;
+  text-align: center;
+}
+
 .notice {
   margin-top: 36rpx;
   color: #8a7358;

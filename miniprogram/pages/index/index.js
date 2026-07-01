@@ -7,6 +7,8 @@ const {
 const { buildAvatarView } = require("../../utils/avatar");
 const { callScoreFunction, showError } = require("../../utils/api");
 
+const HOME_ROOM_PAGE_SIZE = 5;
+
 function buildProfileView(profile) {
   const defaultName = String((profile && profile.defaultName) || "").trim();
   const generatedName = String((profile && profile.generatedName) || "").trim();
@@ -23,8 +25,8 @@ function buildProfileView(profile) {
   };
 }
 
-function getValidRecentRooms(rooms) {
-  const sourceRooms = rooms || wx.getStorageSync("recentRooms") || [];
+function getValidRecentRooms(rooms = []) {
+  const sourceRooms = rooms;
   return sourceRooms.map((room) => ({
     roomId: room.roomId || room._id,
     roomCode: room.roomCode,
@@ -42,7 +44,7 @@ function getQueryValue(text, key) {
 
 Page({
   data: {
-    // 最近进入过的房间列表，来自本地缓存。
+    // 已加入房间列表，来自云函数分页返回。
     recentRooms: [],
     // 当前用户资料保存在本地，用于创建或加入房间时默认带入。
     userProfile: getStoredProfile(),
@@ -54,6 +56,8 @@ Page({
     profileSaving: false,
     profileError: "",
     homeLoading: false,
+    homeCursor: 0,
+    homeHasMore: false,
   },
 
   // 处理分享路径携带的房间参数，直接进入加入流程。
@@ -67,36 +71,50 @@ Page({
     }
   },
 
-  // 页面展示时刷新最近房间列表。
+  // 页面展示时刷新已加入房间列表。
   onShow() {
     getRoomProfile();
     const userProfile = getStoredProfile();
     this.setData({
       ...buildProfileView(userProfile),
-      recentRooms: getValidRecentRooms(),
     });
-    this.loadHomeData();
+    this.loadHomeData({ reset: true });
   },
 
-  loadHomeData() {
+  loadHomeData(options = {}) {
     if (this.data.homeLoading) return;
+    const reset = options.reset !== false;
+    if (!reset && !this.data.homeHasMore) return;
+
     this.setData({ homeLoading: true });
-    callScoreFunction("getHomeData")
+    callScoreFunction("getHomeData", {
+      pageSize: HOME_ROOM_PAGE_SIZE,
+      cursor: reset ? 0 : this.data.homeCursor,
+    })
       .then((result) => {
         const defaultName = String((result.user && result.user.defaultName) || "").trim();
         if (defaultName) {
           const userProfile = saveUserProfile({ defaultName });
           this.setData(buildProfileView(userProfile));
         }
+        const pageRooms = getValidRecentRooms(result.rooms || []);
         this.setData({
-          recentRooms: getValidRecentRooms(result.rooms || []),
+          recentRooms: reset ? pageRooms : this.data.recentRooms.concat(pageRooms),
+          homeCursor: Number(result.nextCursor || 0),
+          homeHasMore: !!result.hasMore,
           homeLoading: false,
         });
       })
       .catch((error) => {
-        this.setData({ homeLoading: false });
+        this.setData({
+          homeLoading: false,
+        });
         showError(error);
       });
+  },
+
+  loadMoreRooms() {
+    this.loadHomeData({ reset: false });
   },
 
   // 只更新草稿，不直接写入本地缓存。
@@ -171,7 +189,7 @@ Page({
     });
   },
 
-  // 从最近房间列表进入房间详情页。
+  // 从已加入房间列表进入房间详情页。
   goRoom(event) {
     const { roomId } = event.currentTarget.dataset;
     wx.navigateTo({

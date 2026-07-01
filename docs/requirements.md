@@ -111,7 +111,7 @@
 2. 创建房间入口。
 3. 加入房间入口。
 4. 扫码加入入口。
-5. 最近进入过的房间列表，第一版可选。
+5. 已加入房间列表，第一版可选；列表由云函数分页返回，按 `users.roomIds` 保存顺序展示，不按房间更新时间重新排序。
 6. 简短定位文案，例如“多人活动记分工具”。
 7. 首页默认名设置区，用户可直接输入本地默认名。
 8. 创建或加入房间时默认使用首页默认名；默认名需点击保存后写入本地缓存，输入过程中不自动保存。若未保存默认名，前端首次进入时生成一次 `yyMMddHHmm` 格式的临时昵称，例如 `2607011657`，后续未保存默认名时继续复用该临时昵称。
@@ -833,15 +833,17 @@ roomId
 
 ### 9.14 getHomeData
 
-用途：首页读取当前用户资料和关联房间列表。
+用途：首页读取当前用户资料和已加入房间分页列表。
 
 规则：
 
 1. 当前用户不存在时自动创建 `users/{openid}`。
-2. 根据 `users.roomIds` 读取对应 `rooms`。
-3. 找不到或超过 `hiddenAt` 的房间不展示。
-4. 将无效或已隐藏的 roomId 从 `users.roomIds` 中懒清理。
-5. 首页展示状态从 `rooms.members`、`rooms.status` 和 `expireAt` 派生。
+2. 接收 `cursor` 和 `pageSize`，`cursor` 为 `users.roomIds` 中的数字位置，`pageSize` 默认 5，最大 20。
+3. 根据 `users.roomIds` 的保存顺序向后扫描对应 `rooms`，收集满一页有效房间或扫描结束后返回。
+4. 找不到、超过 `hiddenAt` 或当前用户无关联权限的房间不展示。
+5. 将无效或已隐藏的 roomId 从 `users.roomIds` 中懒清理。
+6. 首页展示状态从 `rooms.members`、`rooms.status` 和 `expireAt` 派生。
+7. 返回 `rooms`、`nextCursor`、`hasMore` 和 `pageSize`；前端只追加展示云函数返回的分页结果，不自行排序。
 
 ### 9.15 saveDefaultName
 

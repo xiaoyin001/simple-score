@@ -56,7 +56,7 @@
   </view>
 
   <view class="section" wx:if="{{recentRooms.length}}">
-    <view class="section-title">最近进入</view>
+    <view class="section-title">已加入房间</view>
     <view
       class="recent-item"
       wx:for="{{recentRooms}}"
@@ -70,6 +70,16 @@
       </view>
       <view class="recent-arrow">进入</view>
     </view>
+    <button
+      class="load-more-button"
+      wx:if="{{homeHasMore}}"
+      loading="{{homeLoading}}"
+      disabled="{{homeLoading}}"
+      bindtap="loadMoreRooms"
+    >
+      {{homeLoading ? '加载中' : '加载更多'}}
+    </button>
+    <view class="list-loading" wx:elif="{{homeLoading}}">加载中</view>
   </view>
 
   <view class="notice">

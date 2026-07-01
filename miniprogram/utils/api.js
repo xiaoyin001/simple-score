@@ -35,7 +35,7 @@ function showError(error) {
   });
 }
 
-// 保存最近进入过的房间，首页用于展示快捷入口。
+// 保存本机最近进入过的房间，保留兼容旧缓存和后续本地兜底。
 function saveRecentRoom(room) {
   if (!room || !room.roomId) return;
   const current = wx.getStorageSync("recentRooms") || [];

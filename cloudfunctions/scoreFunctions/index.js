@@ -63,6 +63,8 @@ const ACTIVE_ROOM_DURATION_MS = 24 * 60 * 60 * 1000;
 const ROOM_VISIBLE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_RECORDS = 50;
 const MAX_TRANSACTION_RETRY = 3;
+const DEFAULT_HOME_ROOM_PAGE_SIZE = 5;
+const MAX_HOME_ROOM_PAGE_SIZE = 20;
 const DEFAULT_NICKNAME = "2601010000";
 
 function success(data = {}) {
@@ -138,6 +140,18 @@ function isHidden(room) {
 
 function isRoomWritable(room) {
   return room && room.status === ROOM_STATUS.ACTIVE && !isExpired(room);
+}
+
+function normalizeHomeCursor(input) {
+  const cursor = Number(input);
+  if (!Number.isFinite(cursor) || cursor < 0) return 0;
+  return Math.floor(cursor);
+}
+
+function normalizeHomePageSize(input) {
+  const pageSize = Number(input);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) return DEFAULT_HOME_ROOM_PAGE_SIZE;
+  return Math.min(Math.floor(pageSize), MAX_HOME_ROOM_PAGE_SIZE);
 }
 
 function buildNickname(input, fallback = buildGeneratedNickname()) {
@@ -571,20 +585,29 @@ async function getOpenId() {
   });
 }
 
-async function getHomeData() {
+async function getHomeData(event = {}) {
   await ensureCollections();
   const openid = getWxContext().OPENID;
   const user = await getUser(openid);
   const roomIds = Array.isArray(user.roomIds) ? user.roomIds : [];
+  const pageSize = normalizeHomePageSize(event.pageSize);
+  const startCursor = Math.min(normalizeHomeCursor(event.cursor), roomIds.length);
   const rooms = [];
-  const keptRoomIds = [];
+  const invalidRoomIds = new Set();
+  let scanIndex = startCursor;
 
-  for (const roomId of roomIds) {
+  for (; scanIndex < roomIds.length && rooms.length < pageSize; scanIndex += 1) {
+    const roomId = roomIds[scanIndex];
     const room = await getRoomById(roomId);
-    if (!room || isHidden(room)) continue;
+    if (!room || isHidden(room)) {
+      invalidRoomIds.add(roomId);
+      continue;
+    }
     const member = findMember(room, openid);
-    if (!member && room.ownerOpenid !== openid) continue;
-    keptRoomIds.push(roomId);
+    if (!member && room.ownerOpenid !== openid) {
+      invalidRoomIds.add(roomId);
+      continue;
+    }
     rooms.push({
       roomId: room._id,
       roomCode: room.roomCode,
@@ -597,7 +620,15 @@ async function getHomeData() {
     });
   }
 
-  if (keptRoomIds.length !== roomIds.length) {
+  const keptRoomIds = invalidRoomIds.size
+    ? roomIds.filter((roomId) => !invalidRoomIds.has(roomId))
+    : roomIds;
+  const removedBeforeNextCursor = roomIds
+    .slice(0, scanIndex)
+    .filter((roomId) => invalidRoomIds.has(roomId)).length;
+  const nextCursor = Math.max(0, scanIndex - removedBeforeNextCursor);
+
+  if (invalidRoomIds.size) {
     await db.collection("users").doc(openid).update({
       data: {
         roomIds: keptRoomIds,
@@ -606,13 +637,15 @@ async function getHomeData() {
     });
   }
 
-  rooms.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
   return success({
     user: {
       ...user,
       roomIds: keptRoomIds,
     },
     rooms,
+    nextCursor,
+    hasMore: nextCursor < keptRoomIds.length,
+    pageSize,
   });
 }
 
@@ -1211,7 +1244,7 @@ exports.main = async (event = {}) => {
       case "getOpenId":
         return getOpenId();
       case "getHomeData":
-        return getHomeData();
+        return getHomeData(event);
       case "saveDefaultName":
         return saveDefaultName(event);
       case "getRoom":
