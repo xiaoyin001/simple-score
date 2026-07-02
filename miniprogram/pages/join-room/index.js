@@ -9,6 +9,25 @@ const {
 } = require("../../utils/share");
 const { parseRoomEntry } = require("../../utils/room-entry");
 
+function enterRoom(roomId) {
+  if (!roomId) {
+    wx.showToast({
+      title: "缺少房间信息",
+      icon: "none",
+    });
+    return;
+  }
+  wx.redirectTo({
+    url: `/pages/room/index?roomId=${roomId}`,
+    fail: () => {
+      wx.showToast({
+        title: "进入房间失败，请重试",
+        icon: "none",
+      });
+    },
+  });
+}
+
 Page({
   data: {
     // 分享路径携带的房间 ID。
@@ -60,6 +79,7 @@ Page({
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "加入中" });
+    let loadingVisible = true;
     const profile = getRoomProfile();
     callScoreFunction("joinRoom", {
       roomId,
@@ -68,24 +88,29 @@ Page({
     })
       .then((result) => {
         const room = (result.roomView && result.roomView.room) || {};
+        const targetRoomId = result.roomId || room._id;
         saveRecentRoom({
-          roomId: result.roomId,
+          roomId: targetRoomId,
           roomCode: result.roomCode || roomCode,
           name: room.name || "记分房间",
         });
+        wx.hideLoading();
+        loadingVisible = false;
         if (result.pending) {
           wx.showToast({
-            title: "已申请，等待房主确认",
+            title: result.alreadyJoined ? "正在等待房主确认" : "已申请，等待房主确认",
             icon: "none",
           });
         }
-        wx.redirectTo({
-          url: `/pages/room/index?roomId=${result.roomId}`,
-        });
+        enterRoom(targetRoomId);
       })
-      .catch(showError)
-      .finally(() => {
+      .catch((error) => {
         wx.hideLoading();
+        loadingVisible = false;
+        showError(error);
+      })
+      .finally(() => {
+        if (loadingVisible) wx.hideLoading();
         this.setData({ submitting: false });
       });
   },

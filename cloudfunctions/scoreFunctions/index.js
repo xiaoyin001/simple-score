@@ -805,10 +805,11 @@ async function joinRoom(event) {
     if (!room) return fail("房间不存在", "ROOM_NOT_FOUND");
     let nextRoom = null;
     let pending = false;
+    let alreadyJoined = false;
     await runRoomTransaction(async (transaction) => {
       const roomResult = await transaction.collection("rooms").doc(room._id).get();
       const currentRoom = roomResult.data;
-      assertRoomWritable(currentRoom);
+      if (!currentRoom) throw new Error("房间不存在");
       if (isHidden(currentRoom)) throw new Error("房间已归档");
 
       const members = [...(currentRoom.members || [])];
@@ -819,9 +820,11 @@ async function joinRoom(event) {
         if (existing.status === MEMBER_STATUS.REJECTED) throw new Error("申请未通过，无法继续加入");
         nextRoom = currentRoom;
         pending = existing.status === MEMBER_STATUS.PENDING;
+        alreadyJoined = true;
         return;
       }
 
+      assertRoomWritable(currentRoom);
       if (isNicknameDuplicated(currentRoom, nickname)) throw new Error("房间内已有同名成员");
       if (getActiveMembers(currentRoom).length >= Number(currentRoom.memberLimit || 12)) {
         throw new Error("房间人数已满");
@@ -862,6 +865,7 @@ async function joinRoom(event) {
       roomId: room._id,
       roomCode: room.roomCode,
       pending,
+      alreadyJoined,
       roomView: buildRoomView(nextRoom || room, openid).roomView,
     });
   } catch (error) {

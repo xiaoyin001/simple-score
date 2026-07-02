@@ -184,6 +184,8 @@ closeRoom
 
 当前阶段不维护复杂请求幂等表。前端通过 `submitting` 禁用按钮减少重复提交；如果重复请求实际成功，房主可撤销多余记录。
 
+`joinRoom` 对当前用户已存在于房间成员列表的场景保持幂等：未归档且未被移出、未被拒绝时直接返回 `roomView`、`roomId` 和 `alreadyJoined`，前端进入房间页，不重复创建成员，也不执行人数上限、昵称重名、关闭或过期等新成员加入校验。未加入的新用户仍必须通过房间可写、人数上限和昵称重名校验。
+
 `getHomeData` 用于首页读取用户资料和已加入房间列表。它接收 `cursor` 和 `pageSize`，按 `users.roomIds` 倒序向后扫描房间，跳过不存在、超过 `hiddenAt` 或当前用户无关联权限的房间，收集满一页后返回 `rooms`、`nextCursor`、`hasMore` 和 `pageSize`。扫描过程中发现的无效 roomId 会从 `users.roomIds` 懒清理。首页列表不按 `rooms.updatedAt` 排序，避免房间内业务更新影响用户的房间列表顺序。
 
 ## 5. 权限
