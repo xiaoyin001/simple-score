@@ -116,14 +116,74 @@ page {
   width: 76rpx;
   height: 76rpx;
   border-radius: 14rpx;
-  background: #e7f3ff;
-  color: #2469a8;
-  font-size: 19rpx;
+  background: #eef8ff;
+  color: #4b8fc5;
+  font-size: 18rpx;
   line-height: 1.18;
 }
 
-.hero-action-scan text + text {
+.scan-mark {
+  position: relative;
+  width: 38rpx;
+  height: 32rpx;
   margin-top: 4rpx;
+}
+
+.scan-corner {
+  position: absolute;
+  width: 12rpx;
+  height: 12rpx;
+  box-sizing: border-box;
+}
+
+.scan-corner-tl {
+  top: 0;
+  left: 0;
+  border-top: 4rpx solid #4b8fc5;
+  border-left: 4rpx solid #4b8fc5;
+  border-top-left-radius: 4rpx;
+}
+
+.scan-corner-tr {
+  top: 0;
+  right: 0;
+  border-top: 4rpx solid #4b8fc5;
+  border-right: 4rpx solid #4b8fc5;
+  border-top-right-radius: 4rpx;
+}
+
+.scan-corner-bl {
+  bottom: 0;
+  left: 0;
+  border-bottom: 4rpx solid #4b8fc5;
+  border-left: 4rpx solid #4b8fc5;
+  border-bottom-left-radius: 4rpx;
+}
+
+.scan-corner-br {
+  right: 0;
+  bottom: 0;
+  border-right: 4rpx solid #4b8fc5;
+  border-bottom: 4rpx solid #4b8fc5;
+  border-bottom-right-radius: 4rpx;
+}
+
+.scan-line {
+  position: absolute;
+  top: 15rpx;
+  left: 8rpx;
+  right: 8rpx;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: #8cc4ee;
+}
+
+.scan-label {
+  margin-top: 5rpx;
+  color: #4b8fc5;
+  font-size: 18rpx;
+  font-weight: 900;
+  line-height: 20rpx;
 }
 
 .default-name-panel {

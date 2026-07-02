@@ -9,8 +9,14 @@
           <view class="badge">最多 12 人</view>
         </view>
         <view class="hero-action-button hero-action-scan" bindtap="scanJoin">
-          <text>扫码</text>
-          <text>加入</text>
+          <view class="scan-mark">
+            <view class="scan-corner scan-corner-tl"></view>
+            <view class="scan-corner scan-corner-tr"></view>
+            <view class="scan-corner scan-corner-bl"></view>
+            <view class="scan-corner scan-corner-br"></view>
+            <view class="scan-line"></view>
+          </view>
+          <text class="scan-label">扫码</text>
         </view>
       </view>
     </view>
