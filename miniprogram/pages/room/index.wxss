@@ -23,11 +23,19 @@ page {
   box-shadow: 0 14rpx 30rpx rgba(111, 74, 28, 0.08);
 }
 
+.room-header-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .room-name {
+  overflow: hidden;
   color: #3b260f;
   font-size: 40rpx;
   font-weight: 800;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .room-meta {
@@ -66,8 +74,10 @@ page {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  align-items: flex-end;
+  width: 96rpx;
   gap: 12rpx;
-  margin-left: 18rpx;
+  margin-left: 12rpx;
 }
 
 .copy-button,
@@ -87,6 +97,24 @@ page {
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
+}
+
+.copy-button.room-header-button {
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: 2rpx solid rgba(61, 145, 220, 0.34);
+  background: #ffffff;
+  color: #1769a8;
+  box-shadow: 0 8rpx 18rpx rgba(31, 112, 184, 0.16);
+}
+
+.copy-button.room-header-button.copy {
+  width: 72rpx;
+}
+
+.copy-button.room-header-button.qr {
+  width: 96rpx;
 }
 
 .batch-toggle {
@@ -120,11 +148,12 @@ page {
 }
 
 .records-all-button {
-  min-width: 120rpx;
-  background: #e9f5ff;
-  color: #256ba7;
-  border: 0;
+  min-width: 132rpx;
+  background: #ffffff;
+  color: #1769a8;
+  border: 2rpx solid rgba(61, 145, 220, 0.34);
   font-weight: 800;
+  box-shadow: 0 8rpx 18rpx rgba(31, 112, 184, 0.14);
 }
 
 .status-bar {
@@ -426,16 +455,17 @@ page {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 36rpx;
+  height: 40rpx;
   margin: 0 0 0 10rpx;
-  padding: 0 14rpx;
-  border: 1rpx solid #a9dfc1;
-  border-radius: 18rpx;
-  background: #e7f7ee;
-  color: #278654;
+  padding: 0 16rpx;
+  border: 2rpx solid rgba(71, 201, 130, 0.48);
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #1f7a4d;
   font-size: 22rpx;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
+  box-shadow: 0 6rpx 14rpx rgba(31, 122, 77, 0.14);
   box-sizing: border-box;
 }
 

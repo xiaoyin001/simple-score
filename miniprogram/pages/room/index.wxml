@@ -1,13 +1,13 @@
 <view class="page" wx:if="{{!loading && room}}">
   <view class="room-header">
-    <view>
+    <view class="room-header-main">
       <view class="room-name">{{room.name}}</view>
       <view class="room-meta">房间码 {{room.roomCode}} · {{activeMemberCount}}/{{room.memberLimit}} 人 · 进入顺序</view>
       <view wx:if="{{showSyncStatus}}" class="sync-status {{syncStatusClass}}">{{syncStatusText}}</view>
     </view>
     <view class="room-header-actions">
-      <button class="copy-button" bindtap="copyRoomCode">复制</button>
-      <button class="copy-button" bindtap="showRoomQrCode">二维码</button>
+      <button class="copy-button room-header-button copy" bindtap="copyRoomCode">复制</button>
+      <button class="copy-button room-header-button qr" bindtap="showRoomQrCode">二维码</button>
     </view>
   </view>
 
