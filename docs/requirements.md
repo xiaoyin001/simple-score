@@ -336,7 +336,7 @@
 3. 分享卡片带房间名称。
 4. 分享路径带房间 ID 或房间码。
 5. 房间页展示房间码。
-6. 房间页可点击展示房间二维码，二维码内容为房间码，其他成员可通过首页“扫码加入”扫描加入。
+6. 房间页可点击展示房间小程序码，其他成员可通过微信“扫一扫”进入加入房间页，也可通过首页“扫码加入”扫描后进入加入房间页。
 
 分享文案建议：
 
@@ -654,7 +654,24 @@ currentMember
 
 `members` 返回 active、pending 和 removed 成员。前端按进入顺序展示 active 和 removed 成员，并在房主端单独展示 pending 申请。
 
-### 9.5 reviewJoinRequest
+### 9.5 getRoomEntryCode
+
+用途：生成当前房间的加入小程序码。
+
+入参：
+
+```text
+roomId
+```
+
+规则：
+
+1. 只有当前可查看该房间的用户可以生成。
+2. 小程序码指向 `pages/join-room/index`。
+3. 小程序码 `scene` 携带房间码短参数，加入页解析后展示房间码和加入按钮。
+4. 首页“扫码加入”扫描该小程序码时，也应解析扫码结果中的路径或 `scene` 并进入加入房间页。
+
+### 9.6 reviewJoinRequest
 
 用途：房主同意或拒绝加入申请。
 
@@ -673,7 +690,7 @@ action: approve | reject
 3. 成员必须处于 pending 状态。
 4. 同意时房间 active 人数不能超过上限，昵称仍不能重复。
 
-### 9.6 removeMember
+### 9.7 removeMember
 
 用途：房主将普通成员移出房间。
 
@@ -691,7 +708,7 @@ memberId
 3. 只能移出 active 普通成员，不能移出房主。
 4. 移出后成员状态为 removed，积分和历史记录保留，但不再参与记分、转移或批量选择。
 
-### 9.7 updateNickname
+### 9.8 updateNickname
 
 用途：成员修改自己在房间内显示的昵称。
 
@@ -710,7 +727,7 @@ nickname
 4. 每名成员只能修改一次自己的昵称，修改后写入 `nicknameEdited: true`。
 5. 房主修改昵称时同步更新房间 `ownerNickname`。
 
-### 9.8 updateScore
+### 9.9 updateScore
 
 用途：单个成员加分或扣分。
 
@@ -730,7 +747,7 @@ amount
 3. 分值必须是正整数。
 4. 成员必须属于当前房间。
 
-### 9.9 batchUpdateScore
+### 9.10 batchUpdateScore
 
 用途：批量加分或扣分。
 
@@ -750,7 +767,7 @@ amount
 3. 所有成员必须属于当前房间。
 4. 分值必须是正整数。
 
-### 9.10 transferScore
+### 9.11 transferScore
 
 用途：公共积分和成员之间、成员和成员之间转移积分。
 
@@ -774,7 +791,7 @@ amount
 5. 如果公共积分作为来源，公共积分不能不足。
 6. 成员必须属于当前房间。
 
-### 9.11 batchTransferScore
+### 9.12 batchTransferScore
 
 用途：同一来源向一个或多个目标批量转移积分。目标只有一个时行为等同普通转移；目标多个时写入批量转移记录。
 
@@ -798,7 +815,7 @@ amount
 6. 如果公共积分作为来源，公共积分不能不足。
 7. 成员必须属于当前房间。
 
-### 9.12 undoLastAction
+### 9.13 undoLastAction
 
 用途：撤销指定的一条可撤销积分操作；未传 recordId 时兼容撤销最近一次可撤销积分操作。
 
@@ -816,7 +833,7 @@ recordId
 3. 原记录未被撤销。
 4. 原记录类型必须可撤销。
 
-### 9.13 closeRoom
+### 9.14 closeRoom
 
 用途：关闭房间。
 
@@ -831,7 +848,7 @@ roomId
 1. 操作人必须是房主。
 2. 房间状态必须为 active。
 
-### 9.14 getHomeData
+### 9.15 getHomeData
 
 用途：首页读取当前用户资料和已加入房间分页列表。
 
@@ -845,7 +862,7 @@ roomId
 6. 首页展示状态从 `rooms.members`、`rooms.status` 和 `expireAt` 派生。
 7. 返回 `rooms`、`nextCursor`、`hasMore` 和 `pageSize`；前端只追加展示云函数返回的分页结果，不自行排序。
 
-### 9.15 saveDefaultName
+### 9.16 saveDefaultName
 
 用途：保存首页默认名。
 
@@ -855,7 +872,7 @@ roomId
 2. 只写入 `users.defaultName`。
 3. 不反向修改已加入房间里的成员昵称。
 
-### 9.16 cleanupExpiredRooms
+### 9.17 cleanupExpiredRooms
 
 当前阶段不提供物理删除清理 action。房间超过 7 天后只从玩家视角隐藏，`rooms` 文档仍保留。
 

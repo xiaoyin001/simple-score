@@ -157,6 +157,7 @@ getHomeData
 saveDefaultName
 getRoom
 getRoomPreview
+getRoomEntryCode
 createRoom
 joinRoom
 updateNickname
@@ -210,11 +211,13 @@ wx.cloud.database()
 
 ## 7. 分享
 
-所有页面 JSON 都开启 `enableShareAppMessage` 和 `enableShareTimeline`。页面加载和回到前台时会调用 `wx.showShareMenu` 开启系统分享菜单，并实现 `onShareAppMessage` 和 `onShareTimeline`。
+所有页面在页面 JS 中实现 `onShareAppMessage` 和 `onShareTimeline`，并在页面加载和回到前台时调用 `wx.showShareMenu` 开启系统分享菜单。页面 JSON 不写 `enableShareAppMessage` 和 `enableShareTimeline`，避免微信开发者工具提示无效配置。
 
 首页和创建页分享小程序首页。房间页和记录页分享当前房间，好友或群分享路径直接进入 `pages/join-room/index`，并携带 `roomId` 和 `roomCode`。加入页如果带有房间参数，继续分享同一个房间；如果没有房间参数，则分享小程序首页。
 
 朋友圈分享受微信限制会打开当前页面路径。房间页会把分享 query 中的 `roomCode` 保留下来；未加入用户打开后如果触发房间访问权限限制，会自动转入加入房间页。
+
+房间页“二维码”入口通过 `getRoomEntryCode` 生成指向 `pages/join-room/index` 的微信小程序码，`scene` 使用短参数携带房间码。用户用微信“扫一扫”扫描后会进入加入房间页，再点击“加入房间”；首页“扫码加入”会兼容解析小程序码返回的 `path`、`scene`、普通二维码 query 和旧房间码文本。
 
 ## 8. 生命周期
 

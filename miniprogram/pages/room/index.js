@@ -1,5 +1,4 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
-const { buildQrRows } = require("../../utils/qrcode");
 const { buildAvatarView } = require("../../utils/avatar");
 const {
   formatRecord: formatRecordForView,
@@ -65,14 +64,11 @@ const UNDOABLE_RECORD_TYPES = [
 ];
 const RECENT_RECORD_PAGE_SIZE = 5;
 
-function buildQrViewRows(roomCode) {
-  return buildQrRows(roomCode).map((row, rowIndex) => ({
-    key: `row-${rowIndex}`,
-    cells: row.map((cell, cellIndex) => ({
-      key: `cell-${rowIndex}-${cellIndex}`,
-      dark: !!cell.dark,
-    })),
-  }));
+function writeRoomQrImage(roomCode, imageBase64) {
+  const safeRoomCode = String(roomCode || "room").replace(/[^0-9A-Za-z_-]/g, "");
+  const filePath = `${wx.env.USER_DATA_PATH}/room-entry-${safeRoomCode || "room"}.png`;
+  wx.getFileSystemManager().writeFileSync(filePath, imageBase64, "base64");
+  return filePath;
 }
 
 // 将记录时间格式化为房间页使用的短时间。
@@ -454,8 +450,9 @@ Page({
     transferTargetCount: 0,
     // 房间二维码弹窗是否展示。
     roomQrVisible: false,
-    // 房间码二维码矩阵。
-    roomQrRows: [],
+    // 指向加入页的小程序码图片。
+    roomQrImage: "",
+    roomQrLoading: false,
   },
 
   // 初始化房间 ID 并加载房间数据。
@@ -874,21 +871,37 @@ Page({
     });
   },
 
-  // 展示房间码二维码，供其他成员用首页“扫码加入”扫描。
+  // 展示房间小程序码，供其他成员用微信或首页“扫码加入”扫描。
   showRoomQrCode() {
     const roomCode = (this.data.room && this.data.room.roomCode) || "";
     if (!roomCode) {
       wx.showToast({ title: "缺少房间码", icon: "none" });
       return;
     }
-    try {
+    if (this.data.roomQrImage) {
       this.setData({
         roomQrVisible: true,
-        roomQrRows: buildQrViewRows(roomCode),
       });
-    } catch (error) {
-      showError(error);
+      return;
     }
+    this.setData({
+      roomQrVisible: true,
+      roomQrLoading: true,
+    });
+    callScoreFunction("getRoomEntryCode", {
+      roomId: this.data.roomId,
+    })
+      .then((result) => {
+        const imagePath = writeRoomQrImage(roomCode, result.imageBase64);
+        this.setData({
+          roomQrImage: imagePath,
+          roomQrLoading: false,
+        });
+      })
+      .catch((error) => {
+        this.setData({ roomQrLoading: false });
+        showError(error);
+      });
   },
 
   // 关闭房间码二维码弹窗。

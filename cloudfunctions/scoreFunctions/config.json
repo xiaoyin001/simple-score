@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "openapi": [
+      "wxacode.getUnlimited"
+    ]
+  },
   "triggers": [
     {
       "name": "cleanupExpiredRooms",

@@ -66,6 +66,7 @@ const MAX_TRANSACTION_RETRY = 3;
 const DEFAULT_HOME_ROOM_PAGE_SIZE = 5;
 const MAX_HOME_ROOM_PAGE_SIZE = 20;
 const DEFAULT_NICKNAME = "2601010000";
+const JOIN_ROOM_PAGE = "pages/join-room/index";
 
 function success(data = {}) {
   return {
@@ -690,6 +691,34 @@ async function getRoomPreview(event) {
   });
 }
 
+function buildRoomEntryScene(room) {
+  return `r=${normalizeText(room.roomCode).toUpperCase()}`;
+}
+
+async function getRoomEntryCode(event) {
+  await ensureCollections();
+  const openid = getWxContext().OPENID;
+  const roomId = normalizeText(event.roomId);
+  const room = await getRoomById(roomId);
+  assertRoomVisible(room, openid);
+  try {
+    const result = await cloud.openapi.wxacode.getUnlimited({
+      page: JOIN_ROOM_PAGE,
+      scene: buildRoomEntryScene(room),
+      checkPath: false,
+    });
+    if (!result || !result.buffer) throw new Error("小程序码生成失败");
+    return success({
+      roomId: room._id,
+      roomCode: room.roomCode,
+      imageBase64: result.buffer.toString("base64"),
+      mimeType: "image/png",
+    });
+  } catch (error) {
+    return fail(error.message || "小程序码生成失败", "ROOM_ENTRY_CODE_FAILED");
+  }
+}
+
 async function createRoom(event) {
   await ensureCollections();
   const openid = getWxContext().OPENID;
@@ -1252,6 +1281,8 @@ exports.main = async (event = {}) => {
         return getRoom(event);
       case "getRoomPreview":
         return getRoomPreview(event);
+      case "getRoomEntryCode":
+        return getRoomEntryCode(event);
       case "createRoom":
         return createRoom(event);
       case "joinRoom":

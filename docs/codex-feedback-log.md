@@ -23,6 +23,65 @@
 
 ## 当前反馈
 
+### 2026-07-02 房间二维码需要支持微信扫一扫进入加入页
+
+```text
+日期：2026-07-02
+来源：human
+场景：分享 / 扫码加入
+结果：negative
+分值：-7
+严重度：4
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`getRoomEntryCode`
+- `cloudfunctions/scoreFunctions/config.json`：`wxacode.getUnlimited` openapi 权限
+- `miniprogram/pages/room/index.js`：房间小程序码生成和展示
+- `miniprogram/pages/index/index.js`：首页扫码解析
+- `miniprogram/pages/join-room/index.js`：`scene` 参数解析
+- `miniprogram/utils/room-entry.js`：房间入口参数解析
+问题对应关系：
+- 微信“扫一扫”扫描房间内二维码不能直接进入加入房间页：对应旧实现生成的是普通房间码文本二维码，不是微信小程序码。
+- 首页“扫码加入”需要继续识别同一个码：对应扫码结果需要兼容小程序码 `path` / `scene`、普通 query 和旧房间码文本。
+现象：
+- 用户希望房间页二维码既能被微信“扫一扫”打开加入房间页，也能被首页扫码入口识别。
+根因或推测：
+- 普通文本二维码只能被小程序内扫码解析，不能稳定让微信客户端按小程序页面路径打开。
+处理方式：
+- 新增云函数 action 生成指向加入页的小程序码；房间页展示生成后的图片；加入页解析 `scene` 中的房间码；首页扫码统一解析小程序码路径、`scene`、query 和旧房间码文本。
+是否需要新增自动检查或测试：
+- 已通过语法检查覆盖；仍需部署云函数后在真机验证微信“扫一扫”和首页“扫码加入”都能进入对应加入房间页。
+```
+
+### 2026-07-02 页面 JSON 分享开关被开发者工具判定无效
+
+```text
+日期：2026-07-02
+来源：human
+场景：分享 / 微信开发者工具告警
+结果：negative
+分值：-2
+严重度：2
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/*/index.json`：移除无效的 `enableShareAppMessage` 和 `enableShareTimeline`
+- `miniprogram/pages/*/index.js`：继续保留 `onShareAppMessage`、`onShareTimeline` 和 `enablePageShare`
+- `docs/architecture.md`：分享实现说明
+问题对应关系：
+- 控制台反复提示 `无效的 page.json ["enableShareAppMessage"] / ["enableShareTimeline"]`：对应页面 JSON 写入了当前开发者工具不认可的配置字段。
+- 分享功能仍需要保留：对应分享能力由页面 JS 生命周期和 `wx.showShareMenu` 承担。
+现象：
+- 微信开发者工具控制台在多个页面反复输出无效 page.json 告警。
+根因或推测：
+- 页面 JSON 中的分享开关不是当前项目基础库/开发者工具认可的页面配置项。
+处理方式：
+- 移除所有页面 JSON 中的两个无效字段；保留页面 JS 分享生命周期函数和统一分享菜单开启逻辑。
+是否需要新增自动检查或测试：
+- 已通过 JSON 解析、语法检查和关键词扫描；仍需微信开发者工具重新编译后确认该告警消失，并验证右上角分享入口仍可用。
+```
+
 ### 2026-07-02 系统菜单提示当前页面不可转发不可分享
 
 ```text

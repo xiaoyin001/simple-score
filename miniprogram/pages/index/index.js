@@ -11,6 +11,7 @@ const {
   buildAppTimelineShare,
   enablePageShare,
 } = require("../../utils/share");
+const { buildJoinRoomUrl, parseRoomEntry } = require("../../utils/room-entry");
 
 const HOME_ROOM_PAGE_SIZE = 5;
 
@@ -73,12 +74,6 @@ function getValidRecentRooms(rooms = []) {
   }).filter((room) => room && room.roomId);
 }
 
-// 从扫码结果或分享路径中读取指定查询参数。
-function getQueryValue(text, key) {
-  const match = String(text || "").match(new RegExp(`[?&]${key}=([^&]+)`));
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
 Page({
   data: {
     // 已加入房间列表，来自云函数分页返回。
@@ -101,11 +96,10 @@ Page({
   // 处理分享路径携带的房间参数，直接进入加入流程。
   onLoad(options) {
     enablePageShare();
-    const roomId = options.roomId || "";
-    const roomCode = options.roomCode || "";
+    const { roomId, roomCode } = parseRoomEntry(options);
     if (roomId || roomCode) {
       wx.navigateTo({
-        url: `/pages/join-room/index?roomId=${roomId}&roomCode=${roomCode}`,
+        url: buildJoinRoomUrl({ roomId, roomCode }),
       });
     }
   },
@@ -245,11 +239,16 @@ Page({
     wx.scanCode({
       scanType: ["qrCode", "barCode"],
       success: (result) => {
-        const raw = result.result || "";
-        const roomId = getQueryValue(raw, "roomId");
-        const roomCode = getQueryValue(raw, "roomCode") || raw.trim();
+        const entry = parseRoomEntry(result.path || result.result || "");
+        if (!entry.roomId && !entry.roomCode) {
+          wx.showToast({
+            title: "未识别到房间码",
+            icon: "none",
+          });
+          return;
+        }
         wx.navigateTo({
-          url: `/pages/join-room/index?roomId=${roomId}&roomCode=${roomCode}`,
+          url: buildJoinRoomUrl(entry),
         });
       },
       fail: () => {

@@ -590,29 +590,27 @@ page {
   letter-spacing: 0;
 }
 
-.qr-matrix {
+.qr-image {
   width: 464rpx;
   height: 464rpx;
   margin: 28rpx auto 0;
-  padding: 64rpx;
   background: #ffffff;
   border: 2rpx solid rgba(90, 52, 24, 0.12);
   box-sizing: border-box;
 }
 
-.qr-row {
+.qr-loading {
   display: flex;
-  height: 16rpx;
-}
-
-.qr-cell {
-  width: 16rpx;
-  height: 16rpx;
+  align-items: center;
+  justify-content: center;
+  width: 464rpx;
+  height: 464rpx;
+  margin: 28rpx auto 0;
+  border: 2rpx solid rgba(90, 52, 24, 0.12);
   background: #ffffff;
-}
-
-.qr-cell.dark {
-  background: #111827;
+  color: #8a7358;
+  font-size: 26rpx;
+  box-sizing: border-box;
 }
 
 .qr-tip {

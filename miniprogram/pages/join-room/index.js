@@ -7,6 +7,7 @@ const {
   buildRoomTimelineShare,
   enablePageShare,
 } = require("../../utils/share");
+const { parseRoomEntry } = require("../../utils/room-entry");
 
 Page({
   data: {
@@ -24,9 +25,10 @@ Page({
   onLoad(options) {
     enablePageShare();
     const profile = getRoomProfile();
+    const entry = parseRoomEntry(options);
     this.setData({
-      roomId: options.roomId || "",
-      roomCode: options.roomCode || "",
+      roomId: entry.roomId,
+      roomCode: entry.roomCode,
       nickname: profile.nickname,
     });
   },
