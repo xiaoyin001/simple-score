@@ -20,8 +20,8 @@ page {
 
 .hero-icon {
   flex-shrink: 0;
-  width: 104rpx;
-  height: 104rpx;
+  width: 148rpx;
+  height: 148rpx;
   border-radius: 22rpx;
   box-shadow: 0 10rpx 24rpx rgba(111, 74, 28, 0.12);
 }
@@ -29,6 +29,7 @@ page {
 .hero-copy {
   flex: 0 0 304rpx;
   width: 304rpx;
+  height: 148rpx;
   min-width: 0;
   box-sizing: border-box;
 }
