@@ -4,9 +4,19 @@
     <view class="hero-copy">
       <view class="app-name">简单记分鸭</view>
       <view class="tagline-row">
-        <view class="tagline">多人活动记分工具</view>
-        <view class="badge">最多 12 人</view>
+        <view class="tagline-stack">
+          <view class="tagline">多人活动记分工具</view>
+          <view class="badge">最多 12 人</view>
+        </view>
+        <view class="hero-action-button hero-action-scan" bindtap="scanJoin">
+          <text>扫码</text>
+          <text>加入</text>
+        </view>
       </view>
+    </view>
+    <view class="hero-actions">
+      <view class="hero-action-button hero-action-create" bindtap="goCreate">创建房间</view>
+      <view class="hero-action-button hero-action-join" bindtap="goJoin">输入房间码</view>
     </view>
   </view>
 
@@ -40,12 +50,6 @@
     <view class="default-name-hint {{profileError ? 'error' : ''}}">
       {{profileError || '点击保存后，创建或加入房间会使用这个名称'}}
     </view>
-  </view>
-
-  <view class="action-panel">
-    <button class="primary-button" bindtap="goCreate">创建房间</button>
-    <button class="secondary-button" bindtap="goJoin">输入房间码</button>
-    <button class="ghost-button" bindtap="scanJoin">扫码加入</button>
   </view>
 
   <view class="section" wx:if="{{recentRooms.length}}">
