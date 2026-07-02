@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "操作记录",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "enableShareAppMessage": true,
+  "enableShareTimeline": true
 }

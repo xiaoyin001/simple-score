@@ -1,5 +1,12 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
 const { getRoomProfile } = require("../../utils/profile");
+const {
+  buildAppShareMessage,
+  buildAppTimelineShare,
+  buildRoomShareMessage,
+  buildRoomTimelineShare,
+  enablePageShare,
+} = require("../../utils/share");
 
 Page({
   data: {
@@ -15,12 +22,17 @@ Page({
 
   // 接收首页、扫码或分享路径传入的房间参数。
   onLoad(options) {
+    enablePageShare();
     const profile = getRoomProfile();
     this.setData({
       roomId: options.roomId || "",
       roomCode: options.roomCode || "",
       nickname: profile.nickname,
     });
+  },
+
+  onShow() {
+    enablePageShare();
   },
 
   // 根据输入框绑定的 field 更新对应表单字段。
@@ -74,5 +86,25 @@ Page({
         wx.hideLoading();
         this.setData({ submitting: false });
       });
+  },
+
+  onShareAppMessage() {
+    if (this.data.roomId || this.data.roomCode) {
+      return buildRoomShareMessage({
+        _id: this.data.roomId,
+        roomCode: this.data.roomCode,
+      });
+    }
+    return buildAppShareMessage();
+  },
+
+  onShareTimeline() {
+    if (this.data.roomId || this.data.roomCode) {
+      return buildRoomTimelineShare({
+        _id: this.data.roomId,
+        roomCode: this.data.roomCode,
+      });
+    }
+    return buildAppTimelineShare();
   },
 });

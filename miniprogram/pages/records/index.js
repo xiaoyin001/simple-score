@@ -3,6 +3,13 @@ const {
   formatRecord: formatSharedRecord,
   sortRecordsForView,
 } = require("../../utils/records");
+const {
+  buildAppShareMessage,
+  buildAppTimelineShare,
+  buildRoomShareMessage,
+  buildRoomTimelineShare,
+  enablePageShare,
+} = require("../../utils/share");
 
 // 操作类型到记录页展示文案的映射。
 const TYPE_LABELS = {
@@ -208,6 +215,8 @@ Page({
   data: {
     // 当前房间 ID，来自页面参数。
     roomId: "",
+    // 分享路径携带的房间码，用于未加入用户转入加入流程。
+    sharedRoomCode: "",
     // 房间详情，用于页面标题和上下文展示。
     room: null,
     // 格式化后的操作记录列表。
@@ -222,8 +231,10 @@ Page({
 
   // 初始化房间 ID 并加载记录。
   onLoad(options) {
+    enablePageShare();
     this.setData({
       roomId: options.roomId || "",
+      sharedRoomCode: options.roomCode || "",
     });
     this.loadRecords();
   },
@@ -231,6 +242,10 @@ Page({
   // 下拉刷新记录列表。
   onPullDownRefresh() {
     this.loadRecords().finally(() => wx.stopPullDownRefresh());
+  },
+
+  onShow() {
+    enablePageShare();
   },
 
   // 复用房间详情接口获取最近操作记录。
@@ -250,6 +265,12 @@ Page({
         });
       })
       .catch((error) => {
+        if (error.code === "ROOM_ACCESS_DENIED" && this.data.sharedRoomCode) {
+          wx.redirectTo({
+            url: `/pages/join-room/index?roomId=${this.data.roomId}&roomCode=${this.data.sharedRoomCode}`,
+          });
+          return;
+        }
         this.setData({ loading: false });
         showError(error);
       });
@@ -282,5 +303,19 @@ Page({
           });
       },
     });
+  },
+
+  onShareAppMessage() {
+    if (this.data.room) {
+      return buildRoomShareMessage(this.data.room);
+    }
+    return buildAppShareMessage();
+  },
+
+  onShareTimeline() {
+    if (this.data.room) {
+      return buildRoomTimelineShare(this.data.room);
+    }
+    return buildAppTimelineShare();
   },
 });

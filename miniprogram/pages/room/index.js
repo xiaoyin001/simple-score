@@ -5,6 +5,11 @@ const {
   formatRecord: formatRecordForView,
   sortRecordsForView,
 } = require("../../utils/records");
+const {
+  buildRoomShareMessage,
+  buildRoomTimelineShare,
+  enablePageShare,
+} = require("../../utils/share");
 
 // 操作类型到页面展示文案的映射。
 const TYPE_LABELS = {
@@ -374,6 +379,8 @@ Page({
   data: {
     // 当前房间 ID，来自页面参数。
     roomId: "",
+    // 分享路径携带的房间码，用于未加入用户转入加入流程。
+    sharedRoomCode: "",
     // 页面加载状态。
     loading: true,
     // 房间云端数据不可用时的提示状态，本地最近房间缓存不在这里清理。
@@ -453,8 +460,10 @@ Page({
 
   // 初始化房间 ID 并加载房间数据。
   onLoad(options) {
+    enablePageShare();
     this.setData({
       roomId: options.roomId || "",
+      sharedRoomCode: options.roomCode || "",
     });
     this.loadRoom();
   },
@@ -465,6 +474,7 @@ Page({
   },
 
   onShow() {
+    enablePageShare();
     if (this.data.room) {
       this.startRoomWatchers();
       this.scheduleSilentRoomReload(300, Number(this.data.room.sequence || 0));
@@ -816,6 +826,12 @@ Page({
       .catch((error) => {
         const isRoomMissing = error.code === "ROOM_NOT_FOUND";
         const isAccessDenied = error.code === "ROOM_ACCESS_DENIED";
+        if (isAccessDenied && this.data.sharedRoomCode) {
+          wx.redirectTo({
+            url: `/pages/join-room/index?roomId=${this.data.roomId}&roomCode=${this.data.sharedRoomCode}`,
+          });
+          return;
+        }
         const shouldLeaveRoomView = isRoomMissing || isAccessDenied;
         this.setData({
           loading: false,
@@ -1363,10 +1379,16 @@ Page({
 
   // 配置微信分享卡片，携带当前房间 ID。
   onShareAppMessage() {
-    const room = this.data.room || {};
-    return {
-      title: `加入我的记分房间：${room.name || "简单记分鸭"}`,
-      path: `/pages/index/index?roomId=${room._id || this.data.roomId}`,
-    };
+    return buildRoomShareMessage({
+      ...(this.data.room || {}),
+      _id: (this.data.room && this.data.room._id) || this.data.roomId,
+    });
+  },
+
+  onShareTimeline() {
+    return buildRoomTimelineShare({
+      ...(this.data.room || {}),
+      _id: (this.data.room && this.data.room._id) || this.data.roomId,
+    });
   },
 });

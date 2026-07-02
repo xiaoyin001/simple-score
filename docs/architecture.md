@@ -208,7 +208,15 @@ wx.cloud.database()
 
 页面隐藏或卸载时关闭 watcher。watch 短暂空快照时保留当前页面，并静默调用一次 `getRoom` 兜底。
 
-## 7. 生命周期
+## 7. 分享
+
+所有页面 JSON 都开启 `enableShareAppMessage` 和 `enableShareTimeline`。页面加载和回到前台时会调用 `wx.showShareMenu` 开启系统分享菜单，并实现 `onShareAppMessage` 和 `onShareTimeline`。
+
+首页和创建页分享小程序首页。房间页和记录页分享当前房间，好友或群分享路径直接进入 `pages/join-room/index`，并携带 `roomId` 和 `roomCode`。加入页如果带有房间参数，继续分享同一个房间；如果没有房间参数，则分享小程序首页。
+
+朋友圈分享受微信限制会打开当前页面路径。房间页会把分享 query 中的 `roomCode` 保留下来；未加入用户打开后如果触发房间访问权限限制，会自动转入加入房间页。
+
+## 8. 生命周期
 
 ```text
 expireAt：创建时间 + 24 小时，超过后只读。
@@ -220,7 +228,7 @@ closedAt：房主主动关闭时间。
 
 超过 `hiddenAt` 后首页不展示；旧链接进入时提示房间已归档；`rooms` 文档仍保留。
 
-## 8. 自动检查
+## 9. 自动检查
 
 每次非简单变更至少运行：
 

@@ -23,6 +23,39 @@
 
 ## 当前反馈
 
+### 2026-07-02 系统菜单提示当前页面不可转发不可分享
+
+```text
+日期：2026-07-02
+来源：human
+场景：分享
+结果：negative
+分值：-6
+严重度：4
+置信度：5
+影响模块：miniprogram / docs
+关联代码位置：
+- `miniprogram/pages/index/index.js`：首页缺少 `onShareAppMessage` 和 `onShareTimeline`
+- `miniprogram/pages/create-room/index.js`：创建页缺少系统分享声明
+- `miniprogram/pages/join-room/index.js`：加入页缺少系统分享声明和房间参数转发
+- `miniprogram/pages/room/index.js`：房间页分享路径未直接落到加入页，缺少朋友圈分享处理
+- `miniprogram/pages/records/index.js`：记录页缺少系统分享声明
+- `miniprogram/pages/*/index.json`：页面缺少 `enableShareAppMessage` 和 `enableShareTimeline` 显式开关
+- `miniprogram/utils/share.js`：统一分享菜单和分享卡片配置
+问题对应关系：
+- 微信菜单显示“当前页面不可转发 / 当前页面不可分享”：对应当前页面没有实现微信要求的分享生命周期函数，或没有主动开启分享菜单。
+- 微信菜单中“发送给朋友”可用但“当前页面/朋友圈分享”仍不可用：对应页面 JSON 缺少朋友圈分享显式开关，或当前测试环境不支持该能力。
+- 房间分享路径需要带用户进入正确房间：对应分享卡片必须携带 `roomId` 和 `roomCode`，并落到加入房间流程。
+现象：
+- 在小程序右上角菜单中，“当前页面不可转发”和“当前页面不可分享”置灰，用户无法从当前页面发起传播。
+根因或推测：
+- 首页、创建页、加入页和记录页没有声明 `onShareAppMessage` / `onShareTimeline`；房间页虽有基础好友分享函数，但没有统一开启系统菜单和朋友圈分享处理。二次验证中“发送给朋友”已可用，但“当前页面/朋友圈分享”仍灰，进一步补充页面 JSON 分享开关。
+处理方式：
+- 新增 `miniprogram/utils/share.js` 统一开启系统分享菜单和生成分享卡片；所有页面接入分享声明；房间相关分享携带 `roomId` 和 `roomCode` 并优先进入加入页；所有页面 JSON 显式开启 `enableShareAppMessage` 和 `enableShareTimeline`。
+是否需要新增自动检查或测试：
+- 当前通过语法检查覆盖；仍需微信开发者工具人工验证首页、房间页、加入页和记录页右上角菜单不再置灰，房间分享卡片可让未加入用户进入对应加入流程。
+```
+
 ### 2026-07-01 loading 调用未成对警告
 
 ```text

@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "房间",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "enableShareAppMessage": true,
+  "enableShareTimeline": true
 }

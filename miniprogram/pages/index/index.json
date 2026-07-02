@@ -1,3 +1,5 @@
 {
-  "navigationBarTitleText": "简单记分鸭"
+  "navigationBarTitleText": "简单记分鸭",
+  "enableShareAppMessage": true,
+  "enableShareTimeline": true
 }

@@ -1,5 +1,10 @@
 const { callScoreFunction, saveRecentRoom, showError } = require("../../utils/api");
 const { getRoomProfile } = require("../../utils/profile");
+const {
+  buildAppShareMessage,
+  buildAppTimelineShare,
+  enablePageShare,
+} = require("../../utils/share");
 
 function buildDefaultRoomName(nickname) {
   const prefix = String(nickname || "").trim().slice(0, 6) || "我的";
@@ -26,11 +31,16 @@ Page({
 
   // 进入页面时默认使用首页设置的名称。
   onLoad() {
+    enablePageShare();
     const profile = getRoomProfile();
     this.setData({
       name: buildDefaultRoomName(profile.nickname),
       nickname: profile.nickname,
     });
+  },
+
+  onShow() {
+    enablePageShare();
   },
 
   // 根据输入框绑定的 field 更新对应表单字段。
@@ -100,5 +110,13 @@ Page({
         wx.hideLoading();
         this.setData({ submitting: false });
       });
+  },
+
+  onShareAppMessage() {
+    return buildAppShareMessage();
+  },
+
+  onShareTimeline() {
+    return buildAppTimelineShare();
   },
 });

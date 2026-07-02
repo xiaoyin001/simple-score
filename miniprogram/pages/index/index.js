@@ -6,6 +6,11 @@ const {
 } = require("../../utils/profile");
 const { buildAvatarView } = require("../../utils/avatar");
 const { callScoreFunction, showError } = require("../../utils/api");
+const {
+  buildAppShareMessage,
+  buildAppTimelineShare,
+  enablePageShare,
+} = require("../../utils/share");
 
 const HOME_ROOM_PAGE_SIZE = 5;
 
@@ -95,6 +100,7 @@ Page({
 
   // 处理分享路径携带的房间参数，直接进入加入流程。
   onLoad(options) {
+    enablePageShare();
     const roomId = options.roomId || "";
     const roomCode = options.roomCode || "";
     if (roomId || roomCode) {
@@ -106,6 +112,7 @@ Page({
 
   // 页面展示时刷新已加入房间列表。
   onShow() {
+    enablePageShare();
     getRoomProfile();
     const userProfile = getStoredProfile();
     this.setData({
@@ -252,5 +259,13 @@ Page({
         });
       },
     });
+  },
+
+  onShareAppMessage() {
+    return buildAppShareMessage();
+  },
+
+  onShareTimeline() {
+    return buildAppTimelineShare();
   },
 });
