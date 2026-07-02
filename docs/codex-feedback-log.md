@@ -82,6 +82,35 @@
 - 已通过 JSON 解析、语法检查和关键词扫描；仍需微信开发者工具重新编译后确认该告警消失，并验证右上角分享入口仍可用。
 ```
 
+### 2026-07-02 首页扫码不识别房间码且微信扫一扫进入后未带入房间码
+
+```text
+日期：2026-07-02
+来源：human
+场景：分享 / 扫码加入
+结果：negative
+分值：-8
+严重度：4
+置信度：5
+影响模块：miniprogram / scoreFunctions / docs
+关联代码位置：
+- `cloudfunctions/scoreFunctions/index.js`：`getRoomEntryCode` 从 `wxacode.getUnlimited` 调整为 `wxacode.createQRCode`
+- `cloudfunctions/scoreFunctions/config.json`：openapi 权限调整为 `wxacode.createQRCode`
+- `miniprogram/pages/index/index.js`：首页扫码不再限制 `scanType`
+- `miniprogram/utils/room-entry.js`：兼容旧 `scene` 纯房间码和键值参数
+问题对应关系：
+- 首页“扫码加入”无法识别房间页展示的码：对应上一版生成的是微信小程序码形态，不是普通二维码形态，小程序内 `wx.scanCode` 识别不稳定。
+- 微信“扫一扫”能进入加入页但房间码没有自动填入：对应 `scene` 参数链路存在真机差异，加入页未稳定拿到 `roomCode`。
+现象：
+- 用户扫描房间页二维码时，首页扫码无法识别；用微信扫一扫打开加入页后房间码为空。
+根因或推测：
+- `wxacode.getUnlimited` 适合微信客户端扫一扫进入小程序，但不适合作为本小程序内 `wx.scanCode` 的唯一识别目标；`scene` 使用键值格式也增加了解析差异。
+处理方式：
+- 改用 `wxacode.createQRCode` 生成普通二维码形态的小程序二维码，路径直接携带 `roomCode`；首页扫码解析二维码返回的 `path`；同时保留旧 `scene` 解析兼容。
+是否需要新增自动检查或测试：
+- 已通过解析样例和语法检查；仍需部署云函数后在真机验证微信“扫一扫”和首页“扫码加入”都能进入加入页，且房间码自动填入。
+```
+
 ### 2026-07-02 系统菜单提示当前页面不可转发不可分享
 
 ```text

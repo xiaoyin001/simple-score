@@ -450,7 +450,7 @@ Page({
     transferTargetCount: 0,
     // 房间二维码弹窗是否展示。
     roomQrVisible: false,
-    // 指向加入页的小程序码图片。
+    // 指向加入页的小程序二维码图片。
     roomQrImage: "",
     roomQrLoading: false,
   },
@@ -871,7 +871,7 @@ Page({
     });
   },
 
-  // 展示房间小程序码，供其他成员用微信或首页“扫码加入”扫描。
+  // 展示房间小程序二维码，供其他成员用微信或首页“扫码加入”扫描。
   showRoomQrCode() {
     const roomCode = (this.data.room && this.data.room.roomCode) || "";
     if (!roomCode) {

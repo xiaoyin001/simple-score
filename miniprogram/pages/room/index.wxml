@@ -206,7 +206,9 @@
       <view class="qr-title">房间二维码</view>
       <view class="qr-code-text">{{room.roomCode}}</view>
       <view class="qr-loading" wx:if="{{roomQrLoading}}">生成中...</view>
-      <image wx:elif="{{roomQrImage}}" class="qr-image" src="{{roomQrImage}}" mode="aspectFit" />
+      <view class="qr-image-wrap" wx:elif="{{roomQrImage}}">
+        <image class="qr-image" src="{{roomQrImage}}" mode="aspectFit" />
+      </view>
       <view class="qr-tip">使用微信扫一扫或首页“扫码加入”扫描</view>
       <button class="qr-close-button" bindtap="closeRoomQrCode">关闭</button>
     </view>

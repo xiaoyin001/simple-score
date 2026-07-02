@@ -237,7 +237,6 @@ Page({
   // 扫描二维码或条码并解析房间码。
   scanJoin() {
     wx.scanCode({
-      scanType: ["qrCode", "barCode"],
       success: (result) => {
         const entry = parseRoomEntry(result.path || result.result || "");
         if (!entry.roomId && !entry.roomCode) {

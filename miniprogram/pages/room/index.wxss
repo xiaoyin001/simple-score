@@ -590,10 +590,20 @@ page {
   letter-spacing: 0;
 }
 
+.qr-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 28rpx;
+}
+
 .qr-image {
+  display: block;
+  flex-shrink: 0;
   width: 464rpx;
   height: 464rpx;
-  margin: 28rpx auto 0;
+  max-width: 100%;
   background: #ffffff;
   border: 2rpx solid rgba(90, 52, 24, 0.12);
   box-sizing: border-box;

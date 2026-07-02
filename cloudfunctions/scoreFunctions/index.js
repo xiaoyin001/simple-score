@@ -692,7 +692,12 @@ async function getRoomPreview(event) {
 }
 
 function buildRoomEntryScene(room) {
-  return `r=${normalizeText(room.roomCode).toUpperCase()}`;
+  return normalizeText(room.roomCode).toUpperCase();
+}
+
+function buildRoomEntryPath(room) {
+  const roomCode = encodeURIComponent(buildRoomEntryScene(room));
+  return `${JOIN_ROOM_PAGE}?roomCode=${roomCode}`;
 }
 
 async function getRoomEntryCode(event) {
@@ -702,12 +707,11 @@ async function getRoomEntryCode(event) {
   const room = await getRoomById(roomId);
   assertRoomVisible(room, openid);
   try {
-    const result = await cloud.openapi.wxacode.getUnlimited({
-      page: JOIN_ROOM_PAGE,
-      scene: buildRoomEntryScene(room),
-      checkPath: false,
+    const result = await cloud.openapi.wxacode.createQRCode({
+      path: buildRoomEntryPath(room),
+      width: 430,
     });
-    if (!result || !result.buffer) throw new Error("小程序码生成失败");
+    if (!result || !result.buffer) throw new Error("小程序二维码生成失败");
     return success({
       roomId: room._id,
       roomCode: room.roomCode,
@@ -715,7 +719,7 @@ async function getRoomEntryCode(event) {
       mimeType: "image/png",
     });
   } catch (error) {
-    return fail(error.message || "小程序码生成失败", "ROOM_ENTRY_CODE_FAILED");
+    return fail(error.message || "小程序二维码生成失败", "ROOM_ENTRY_CODE_FAILED");
   }
 }
 

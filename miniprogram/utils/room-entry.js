@@ -38,12 +38,16 @@ function parseQueryValue(text, key) {
 
 function parseScene(scene) {
   const decodedScene = safeDecode(scene);
+  const rawRoomCode = /^[0-9A-Za-z]{4,12}$/.test(decodedScene)
+    ? normalizeRoomCode(decodedScene)
+    : "";
   return {
     roomId: normalizeRoomId(parseQueryValue(decodedScene, "roomId") || parseQueryValue(decodedScene, "id")),
     roomCode: normalizeRoomCode(
       parseQueryValue(decodedScene, "roomCode") ||
         parseQueryValue(decodedScene, "code") ||
-        parseQueryValue(decodedScene, "r")
+        parseQueryValue(decodedScene, "r") ||
+        rawRoomCode
     ),
   };
 }
