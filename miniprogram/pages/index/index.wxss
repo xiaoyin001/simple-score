@@ -1,12 +1,14 @@
 page {
-  background:
-    linear-gradient(180deg, rgba(255, 225, 86, 0.42), rgba(255, 253, 247, 0.94) 360rpx),
-    #fffdf7;
+  background: #fffdf7;
 }
 
 .page {
   min-height: 100vh;
   padding: 48rpx 32rpx 64rpx;
+  background-color: #fffdf7;
+  background-image: linear-gradient(180deg, rgba(255, 225, 86, 0.42), rgba(255, 253, 247, 0.94) 360rpx);
+  background-repeat: no-repeat;
+  background-size: 100% 360rpx;
   box-sizing: border-box;
 }
 
