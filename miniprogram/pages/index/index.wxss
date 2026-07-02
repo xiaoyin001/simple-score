@@ -80,20 +80,20 @@ page {
   flex-direction: column;
   flex-shrink: 0;
   gap: 10rpx;
-  width: 124rpx;
-  height: 124rpx;
+  width: 144rpx;
+  height: 142rpx;
 }
 
 .hero-action-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 124rpx;
-  height: 57rpx;
+  width: 144rpx;
+  height: 66rpx;
   margin: 0;
   padding: 0;
   border-radius: 16rpx;
-  font-size: 22rpx;
+  font-size: 23rpx;
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
