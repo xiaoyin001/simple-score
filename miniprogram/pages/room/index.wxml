@@ -33,11 +33,11 @@
       <image class="score-panel-icon" src="/assets/app-icon.png" mode="aspectFit" />
     </view>
     <view class="score-panel-actions">
-      <view class="public-transfer-row" wx:if="{{canTransfer && isRoomOperable}}">
-        <button class="public-transfer-button left" bindtap="openTransferToPublicDialog">转入</button>
-        <button class="public-transfer-button right" bindtap="openTransferFromPublicDialog">转出</button>
+      <view class="public-action-row {{canTransfer && isRoomOperable ? '' : 'share-only'}}">
+        <button wx:if="{{canTransfer && isRoomOperable}}" class="public-transfer-button" bindtap="openTransferToPublicDialog">转入</button>
+        <button class="public-share-button" open-type="share">分享房间</button>
+        <button wx:if="{{canTransfer && isRoomOperable}}" class="public-transfer-button" bindtap="openTransferFromPublicDialog">转出</button>
       </view>
-      <button class="public-share-button" open-type="share">分享房间</button>
     </view>
   </view>
   <view class="section">
